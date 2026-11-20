@@ -1,9 +1,8 @@
 export type TabId =
+  | 'quote'
   | 'labor'
-  | 'materials'
-  | 'pci'
-  | 'schedule'
-  | 'report';
+  | 'report'
+  | 'pci';
 
 export interface LaborConfig {
   diariaPedreiro: number;

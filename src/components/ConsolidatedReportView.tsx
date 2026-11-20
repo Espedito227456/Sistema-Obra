@@ -1,106 +1,157 @@
-import React, { useRef } from 'react';
-import { Download, Printer, Upload } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Check, Copy, Download, Printer, Upload } from 'lucide-react';
 import { ConstructionProject } from '../types/construction';
 import {
-  calcLaborUnitCost,
   formatBRL,
   formatNum,
-  formatPct,
   ProjectSummary,
 } from '../utils/calculations';
 
 interface Props {
   project: ConstructionProject;
   summary: ProjectSummary;
+  quoteMode: 'labor_only' | 'full';
+  onChangeQuoteMode: (mode: 'labor_only' | 'full') => void;
   onImportProjectJson: (proj: ConstructionProject) => void;
 }
 
 export const ConsolidatedReportView: React.FC<Props> = ({
   project,
   summary,
+  quoteMode,
+  onChangeQuoteMode,
   onImportProjectJson,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const { consolidatedMaterials: mat, pciComputed } = summary;
+  const [copiedWhatsApp, setCopiedWhatsApp] = useState(false);
+
+  const { consolidatedMaterials: mat } = summary;
   const prices = project.materialPrices;
 
   const materialRows = [
     {
-      item: 'Cimento Portland (saco 50 kg)',
-      qty: mat.cimentoSacos50kg,
+      item: 'Cimento (saco 50 kg)',
+      qty: Math.ceil(mat.cimentoSacos50kg),
       unit: 'sacos',
       unitPrice: prices.cimento50kg,
     },
     {
-      item: 'Cal Hidratada (saco 20 kg)',
-      qty: mat.calSacos20kg,
+      item: 'Cal (saco 20 kg)',
+      qty: Math.ceil(mat.calSacos20kg),
       unit: 'sacos',
       unitPrice: prices.cal20kg,
     },
     {
-      item: 'Areia Média/Fina',
-      qty: mat.areiaM3,
-      unit: `m³ (${formatNum(mat.areiaSacos20kg, 0)} sc 20kg)`,
+      item: 'Areia Média',
+      qty: Number(mat.areiaM3.toFixed(2)),
+      unit: 'm³',
       unitPrice: prices.areiaM3,
     },
     {
       item: 'Brita 1',
-      qty: mat.britaM3,
-      unit: `m³ (${formatNum(mat.britaSacos20kg, 0)} sc 20kg)`,
+      qty: Number(mat.britaM3.toFixed(2)),
+      unit: 'm³',
       unitPrice: prices.britaM3,
     },
     {
-      item: 'Tijolo Cerâmico Furado (c/ 7% perda)',
-      qty: mat.tijolosFuradoUnid,
-      unit: 'unidades',
+      item: 'Tijolo Furado',
+      qty: Math.ceil(mat.tijolosFuradoUnid),
+      unit: 'unid',
       unitPrice: prices.tijoloFuradoUnid,
     },
     {
-      item: 'Tijolo Maciço (c/ 7% perda)',
-      qty: mat.tijolosMacicoUnid,
-      unit: 'unidades',
+      item: 'Tijolo Maciço',
+      qty: Math.ceil(mat.tijolosMacicoUnid),
+      unit: 'unid',
       unitPrice: prices.tijoloMacicoUnid,
     },
     {
-      item: 'Argamassa Colante (saco 20 kg)',
-      qty: mat.argamassaSacos20kg,
+      item: 'Argamassa Colante (20 kg)',
+      qty: Math.ceil(mat.argamassaSacos20kg),
       unit: 'sacos',
       unitPrice: prices.argamassa20kg,
     },
     {
-      item: 'Rejunte para Cerâmica',
-      qty: mat.rejunteKg,
+      item: 'Rejunte',
+      qty: Math.ceil(mat.rejunteKg),
       unit: 'kg',
       unitPrice: prices.rejunteKg,
     },
-  ].filter((r) => r.qty > 0.01);
+  ].filter((r) => r.qty > 0);
 
-  const handleExportCsv = () => {
+  const totalDisplayed =
+    quoteMode === 'labor_only'
+      ? summary.totalAutoLabor
+      : summary.totalAutoLabor + summary.totalAutoMaterial;
+
+  const buildWhatsAppText = () => {
     const lines: string[] = [
-      'ITEM_PCI;SERVICO;MAO_DE_OBRA_R$;MATERIAL_R$;TOTAL_R$;INCIDENCIA_%;MIN_%;MAX_%;STATUS',
-    ];
-    for (const item of pciComputed) {
+      `*ORÇAMENTO DE OBRA — ${project.nomeObra}*`,
+      project.metadata.proponente
+        ? `Cliente: ${project.metadata.proponente}`
+        : '',
+      `Prazo estimado: ~${Math.ceil(summary.totalMasonDays)} dias de serviço`,
+      '',
+      '*SERVIÇOS:*',
+    ].filter(Boolean);
+
+    for (const entry of project.entries) {
+      const comp = summary.entriesComputed[entry.id];
+      if (!comp) continue;
+      const val = quoteMode === 'labor_only' ? comp.laborCost : comp.totalCost;
       lines.push(
-        `${item.id};"${item.nome}";${item.totalLaborCost.toFixed(2)};${item.totalMaterialCost.toFixed(2)};${item.totalCost.toFixed(2)};${item.incidencePercent.toFixed(2)};${item.minIncidence.toFixed(2)};${item.maxIncidence.toFixed(2)};${item.status}`
+        `• ${entry.descricao} (${formatNum(comp.quantidadeBase, 0)} ${comp.unidadeBase}): *${formatBRL(val)}*`
       );
     }
-    lines.push(
-      `TOTAL;Custo Direto;;;${summary.custoDireto.toFixed(2)};100.00;;;`
-    );
-    lines.push(
-      `BDI;${project.laborConfig.bdiPercent.toFixed(2)}%;;;${summary.valorBdi.toFixed(2)};;;;`
-    );
-    lines.push(
-      `TOTAL_OBRA;Custo Total da Obra;;;${summary.custoTotalObra.toFixed(2)};;;;`
-    );
 
+    lines.push('');
+    lines.push(
+      `*TOTAL MÃO DE OBRA:* ${formatBRL(summary.totalAutoLabor)}`
+    );
+    if (quoteMode === 'full') {
+      lines.push(
+        `*TOTAL MATERIAIS (est.):* ${formatBRL(summary.totalAutoMaterial)}`
+      );
+      lines.push(`*TOTAL GERAL:* ${formatBRL(totalDisplayed)}`);
+    }
+
+    if (materialRows.length > 0) {
+      lines.push('');
+      lines.push('*LISTA DE MATERIAIS PARA COMPRA (c/ perda):*');
+      for (const m of materialRows) {
+        lines.push(`- ${m.qty} ${m.unit} de ${m.item}`);
+      }
+    }
+
+    return lines.join('\n');
+  };
+
+  const handleCopyWhatsApp = async () => {
+    try {
+      await navigator.clipboard.writeText(buildWhatsAppText());
+      setCopiedWhatsApp(true);
+      setTimeout(() => setCopiedWhatsApp(false), 2500);
+    } catch {
+      // Silencioso caso clipboard esteja bloqueado
+    }
+  };
+
+  const handleExportCsv = () => {
+    const lines: string[] = ['SERVICO;QUANTIDADE;UNIDADE;MAO_DE_OBRA_R$;MATERIAIS_R$;TOTAL_R$'];
+    for (const entry of project.entries) {
+      const comp = summary.entriesComputed[entry.id];
+      if (!comp) continue;
+      lines.push(
+        `"${entry.descricao}";${comp.quantidadeBase.toFixed(2)};${comp.unidadeBase};${comp.laborCost.toFixed(2)};${comp.materialCost.toFixed(2)};${comp.totalCost.toFixed(2)}`
+      );
+    }
     const blob = new Blob(['\uFEFF' + lines.join('\n')], {
       type: 'text/csv;charset=utf-8;',
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `PCI_Orcamento_${project.nomeObra.replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
+    a.download = `Orcamento_${project.nomeObra.replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -128,7 +179,7 @@ export const ConsolidatedReportView: React.FC<Props> = ({
           onImportProjectJson(parsed);
         }
       } catch {
-        // Ignora arquivo inválido silenciosamente
+        // Ignora arquivo inválido
       }
     };
     reader.readAsText(file);
@@ -136,27 +187,86 @@ export const ConsolidatedReportView: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-8">
-      {/* Barra de Ações do Relatório */}
-      <div className="no-print flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">
-            Relatório Unificado para Impressão, Compra de Materiais e Exportação
-          </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Consolida a Planilha de Mão de Obra, Lista de Compras da Calculadora
-            de Materiais e o Resumo Oficial PCI CAIXA.
-          </p>
+    <div className="space-y-6">
+      {/* Barra de Ações Simples para Enviar ao Cliente */}
+      <div className="no-print flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white px-5 py-4 sm:px-6">
+        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => onChangeQuoteMode('labor_only')}
+            className={`min-h-[38px] whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              quoteMode === 'labor_only'
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Só Mão de Obra
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeQuoteMode('full')}
+            className={`min-h-[38px] whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              quoteMode === 'full'
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Mão de Obra + Materiais
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={handleCopyWhatsApp}
+            className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-md bg-green-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-green-800"
+          >
+            {copiedWhatsApp ? (
+              <>
+                <Check className="h-4 w-4" />
+                Copiado para WhatsApp!
+              </>
+            ) : (
+              <>
+                <Copy className="h-4 w-4" />
+                Copiar p/ WhatsApp
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-md bg-blue-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-800"
+          >
+            <Printer className="h-4 w-4" />
+            Imprimir / PDF
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Excel (CSV)
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportJson}
+            className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Backup
+          </button>
+
+          <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
             <Upload className="h-3.5 w-3.5" />
-            Importar JSON
+            Abrir Backup
           </button>
           <input
             ref={fileInputRef}
@@ -165,112 +275,105 @@ export const ConsolidatedReportView: React.FC<Props> = ({
             onChange={handleFileImport}
             className="hidden"
           />
-          <button
-            type="button"
-            onClick={handleExportJson}
-            className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Backup JSON
-          </button>
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Exportar CSV (Excel)
-          </button>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-md bg-blue-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-800"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Imprimir / Salvar PDF
-          </button>
         </div>
       </div>
 
-      {/* Documento Imprimível */}
-      <div className="space-y-8 rounded-lg border border-slate-200 bg-white p-8">
-        {/* Cabeçalho do Relatório */}
+      {/* Proposta Limpa para o Cliente */}
+      <div className="space-y-8 rounded-lg border border-slate-200 bg-white p-6 sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-6">
           <div>
             <p className="text-xs font-semibold text-blue-700">
-              PROPOSTA DE CONSTRUÇÃO INDIVIDUAL · MÃO DE OBRA & MATERIAIS
+              ORÇAMENTO DE SERVIÇOS DE CONSTRUÇÃO
             </p>
             <h1 className="mt-1 text-xl font-bold text-slate-900">
               {project.nomeObra}
             </h1>
             <p className="mt-1 text-xs text-slate-600">
-              Proponente: {project.metadata.proponente} · CPF:{' '}
-              {project.metadata.cpfProp} · Município:{' '}
-              {project.metadata.municipio}/{project.metadata.uf}
-            </p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              RT Projeto/Execução: {project.metadata.rteNome} · Registro:{' '}
-              {project.metadata.rteRegistro}/{project.metadata.rteUf}
+              Cliente: {project.metadata.proponente || 'A definir'} · Prazo
+              estimado:{' '}
+              <span className="font-mono font-medium tabular-nums">
+                {Math.ceil(summary.totalMasonDays)} dias
+              </span>
             </p>
           </div>
           <div className="text-right">
-            <p className="text-xs text-slate-500">Custo Total da Obra (c/ BDI)</p>
-            <p className="font-mono text-2xl font-bold tabular-nums text-slate-900">
-              {formatBRL(summary.custoTotalObra)}
-            </p>
             <p className="text-xs text-slate-500">
-              {formatNum(project.metadata.areaConstruidaTotal, 2)} m² ·{' '}
-              {formatBRL(summary.valorPorM2)}/m²
+              {quoteMode === 'labor_only'
+                ? 'Total Mão de Obra'
+                : 'Total Mão de Obra + Materiais'}
+            </p>
+            <p className="font-mono text-2xl font-bold tabular-nums text-slate-900">
+              {formatBRL(totalDisplayed)}
             </p>
           </div>
         </div>
 
-        {/* 1. Lista Consolidada de Compras de Materiais */}
+        {/* 1. Serviços Incluídos */}
         <div className="print-break-inside-avoid">
           <h3 className="mb-3 text-sm font-semibold text-slate-900">
-            1. Lista Consolidada de Compra de Materiais Básicos (inclui perdas técnicas)
+            1. Serviços Orçados
           </h3>
-          {materialRows.length === 0 ? (
-            <p className="text-xs text-slate-500">
-              Nenhum material calculado nos serviços lançados.
-            </p>
+          {project.entries.length === 0 ? (
+            <p className="text-xs text-slate-500">Nenhum serviço lançado.</p>
           ) : (
             <table className="w-full border-collapse text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
-                  <th className="px-3 py-2">Insumo</th>
-                  <th className="px-3 py-2 text-right">Quantidade Estimada</th>
-                  <th className="px-3 py-2">Unidade</th>
-                  <th className="px-3 py-2 text-right">Preço Unit.</th>
-                  <th className="px-3 py-2 text-right">Subtotal</th>
+                  <th className="px-3 py-2.5">Serviço</th>
+                  <th className="px-3 py-2.5 text-right">Tamanho</th>
+                  <th className="px-3 py-2.5 text-right">Mão de Obra</th>
+                  {quoteMode === 'full' && (
+                    <th className="px-3 py-2.5 text-right">Materiais (est.)</th>
+                  )}
+                  <th className="px-3 py-2.5 text-right">Valor</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {materialRows.map((row) => (
-                  <tr key={row.item}>
-                    <td className="px-3 py-2 font-medium text-slate-800">
-                      {row.item}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold tabular-nums text-slate-900">
-                      {formatNum(row.qty, row.unit === 'unidades' ? 0 : 2)}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">{row.unit}</td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600">
-                      {formatBRL(row.unitPrice)}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold tabular-nums text-slate-900">
-                      {formatBRL(row.qty * row.unitPrice)}
-                    </td>
-                  </tr>
-                ))}
+                {project.entries.map((entry) => {
+                  const comp = summary.entriesComputed[entry.id];
+                  if (!comp) return null;
+                  return (
+                    <tr key={entry.id}>
+                      <td className="px-3 py-2.5 font-medium text-slate-800">
+                        {entry.descricao}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-600">
+                        {formatNum(comp.quantidadeBase, 1)} {comp.unidadeBase}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-700">
+                        {formatBRL(comp.laborCost)}
+                      </td>
+                      {quoteMode === 'full' && (
+                        <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-700">
+                          {formatBRL(comp.materialCost)}
+                        </td>
+                      )}
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold tabular-nums text-slate-900">
+                        {formatBRL(
+                          quoteMode === 'labor_only'
+                            ? comp.laborCost
+                            : comp.totalCost
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
-                <tr className="border-t border-slate-200 bg-slate-50 font-semibold">
-                  <td colSpan={4} className="px-3 py-2 text-right text-slate-700">
-                    Total dos Materiais Calculados:
+                <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                  <td colSpan={2} className="px-3 py-2.5 text-right text-slate-700">
+                    TOTAL:
                   </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-900">
-                    {formatBRL(summary.totalAutoMaterial)}
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-900">
+                    {formatBRL(summary.totalAutoLabor)}
+                  </td>
+                  {quoteMode === 'full' && (
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-900">
+                      {formatBRL(summary.totalAutoMaterial)}
+                    </td>
+                  )}
+                  <td className="px-3 py-2.5 text-right font-mono text-sm font-bold tabular-nums text-blue-700">
+                    {formatBRL(totalDisplayed)}
                   </td>
                 </tr>
               </tfoot>
@@ -278,109 +381,48 @@ export const ConsolidatedReportView: React.FC<Props> = ({
           )}
         </div>
 
-        {/* 2. Resumo de Mão de Obra por m² */}
+        {/* 2. Lista de Compras de Materiais */}
         <div className="print-break-inside-avoid">
           <h3 className="mb-3 text-sm font-semibold text-slate-900">
-            2. Tabela Resumo de Mão de Obra (Diária Pedreiro:{' '}
-            {formatBRL(project.laborConfig.diariaPedreiro)} · Servente:{' '}
-            {project.laborConfig.incluirServente
-              ? formatBRL(project.laborConfig.diariaServente)
-              : 'Não incluído'}
-            )
+            2. Lista de Materiais para Compra (quantidades arredondadas c/ perda)
           </h3>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {project.laborServices
-              .filter((s) => s.corePlanilha)
-              .map((srv) => {
-                const { custoComEncargosUnit } = calcLaborUnitCost(
-                  srv,
-                  project.laborConfig
-                );
-                return (
-                  <div
-                    key={srv.id}
-                    className="flex items-center justify-between rounded border border-slate-200 px-3 py-2 text-xs"
-                  >
-                    <span className="truncate pr-2 text-slate-700">
-                      {srv.nome}
-                    </span>
-                    <span className="whitespace-nowrap font-mono font-semibold tabular-nums text-slate-900">
-                      {formatBRL(custoComEncargosUnit)}/{srv.unidade}
-                    </span>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
-
-        {/* 3. Síntese do Orçamento PCI CAIXA */}
-        <div className="print-break-inside-avoid">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">
-            3. Síntese Orçamentária PCI CAIXA (20 Itens)
-          </h3>
-          <table className="w-full border-collapse text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
-                <th className="px-2 py-2 text-center">Item</th>
-                <th className="px-2 py-2">Etapa</th>
-                <th className="px-2 py-2 text-right">Mão de Obra</th>
-                <th className="px-2 py-2 text-right">Materiais/Outros</th>
-                <th className="px-2 py-2 text-right">Total</th>
-                <th className="px-2 py-2 text-right">Incid. (%)</th>
-                <th className="px-2 py-2 text-right">Faixa CAIXA</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {pciComputed.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-2 py-1.5 text-center font-mono text-slate-600">
-                    {item.id}
-                  </td>
-                  <td className="px-2 py-1.5 text-slate-800">{item.nome}</td>
-                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-slate-700">
-                    {formatBRL(item.totalLaborCost)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-slate-700">
-                    {formatBRL(item.totalMaterialCost)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono font-semibold tabular-nums text-slate-900">
-                    {formatBRL(item.totalCost)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-slate-800">
-                    {formatPct(item.incidencePercent, 2)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-slate-500">
-                    {formatNum(item.minIncidence, 2)}–{formatNum(item.maxIncidence, 2)}%
-                  </td>
-                </tr>
+          {materialRows.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              Nenhum material calculado.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {materialRows.map((row) => (
+                <div
+                  key={row.item}
+                  className="flex items-center justify-between rounded-md border border-slate-200 px-3.5 py-2.5 text-xs"
+                >
+                  <span className="font-medium text-slate-800">{row.item}</span>
+                  <span className="font-mono font-semibold tabular-nums text-slate-900">
+                    {row.qty} {row.unit}
+                  </span>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
 
-        {/* Assinaturas CAIXA */}
+        {/* Assinaturas */}
         <div className="print-break-inside-avoid grid grid-cols-1 gap-8 border-t border-slate-200 pt-8 sm:grid-cols-2">
           <div>
             <p className="text-xs text-slate-500">
-              Local e data: {project.metadata.localData}
+              {project.metadata.localData}
             </p>
             <div className="mt-10 border-t border-slate-400 pt-2 text-xs text-slate-700">
-              <p className="font-semibold">Cliente / Proponente</p>
-              <p>
-                {project.metadata.proponente} · CPF: {project.metadata.cpfProp}
-              </p>
+              <p className="font-semibold">Contratante / Cliente</p>
+              <p>{project.metadata.proponente || 'Assinatura'}</p>
             </div>
           </div>
           <div>
-            <p className="text-xs text-slate-500">
-              Declaração de veracidade técnica (PCI AE 130 026)
-            </p>
+            <p className="text-xs text-slate-500">Responsável pela Execução</p>
             <div className="mt-10 border-t border-slate-400 pt-2 text-xs text-slate-700">
-              <p className="font-semibold">Responsável Técnico</p>
-              <p>
-                {project.metadata.rteNome} · CAU/CREA:{' '}
-                {project.metadata.rteRegistro}/{project.metadata.rteUf}
-              </p>
+              <p className="font-semibold">Mestre de Obras / Empreiteiro</p>
+              <p>{project.metadata.rteNome || 'Assinatura'}</p>
             </div>
           </div>
         </div>
