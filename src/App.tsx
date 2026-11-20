@@ -77,7 +77,17 @@ function loadInitialState(): StoredState {
                 }
               : s
           );
-          return { ...p, laborServices: updatedServices };
+          return {
+            ...p,
+            laborServices: updatedServices,
+            laborConfig: {
+              ...p.laborConfig,
+              qtdPedreiros: p.laborConfig.qtdPedreiros ?? 1,
+              qtdServentes:
+                p.laborConfig.qtdServentes ??
+                (p.laborConfig.incluirServente ? 1 : 0),
+            },
+          };
         });
         return {
           ...parsed,
@@ -531,6 +541,12 @@ export default function App() {
                     ...p.laborConfig,
                     materialMarginPercent: Math.max(pct, 0),
                   },
+                }))
+              }
+              onUpdateLaborConfig={(patch) =>
+                updateActiveProject((p) => ({
+                  ...p,
+                  laborConfig: { ...p.laborConfig, ...patch },
                 }))
               }
             />

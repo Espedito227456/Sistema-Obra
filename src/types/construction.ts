@@ -7,6 +7,8 @@ export type TabId =
 export interface LaborConfig {
   diariaPedreiro: number;
   diariaServente: number;
+  qtdPedreiros?: number;
+  qtdServentes?: number;
   incluirServente: boolean;
   encargosPercent: number;
   bdiPercent: number;

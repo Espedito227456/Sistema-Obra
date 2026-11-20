@@ -46,10 +46,22 @@ export function formatPct(val: number, decimals = 2): string {
   return `${formatNum(val, decimals)}%`;
 }
 
+export function getTeamCounts(config: LaborConfig): {
+  qtdPedreiros: number;
+  qtdServentes: number;
+} {
+  const qtdPedreiros = Math.max(Math.round(config.qtdPedreiros ?? 1), 1);
+  const qtdServentes = config.incluirServente
+    ? Math.max(Math.round(config.qtdServentes ?? 1), 0)
+    : 0;
+  return { qtdPedreiros, qtdServentes };
+}
+
 export function getMinTeamDailyCost(config: LaborConfig): number {
+  const { qtdPedreiros, qtdServentes } = getTeamCounts(config);
   const baseDay =
-    Math.max(config.diariaPedreiro, 0) +
-    (config.incluirServente ? Math.max(config.diariaServente, 0) : 0);
+    qtdPedreiros * Math.max(config.diariaPedreiro, 0) +
+    qtdServentes * Math.max(config.diariaServente, 0);
   return baseDay * (1 + Math.max(config.encargosPercent, 0) / 100);
 }
 
@@ -70,11 +82,10 @@ export function calcLaborUnitCost(
       custoComEncargosUnit: service.precoFixoUnit,
     };
   }
-  const prod = Math.max(service.produtividadeDia, 0.01);
-  const custoPedreiroUnit = config.diariaPedreiro / prod;
-  const custoServenteUnit = config.incluirServente
-    ? (config.diariaServente * service.coefServente) / prod
-    : 0;
+  const { qtdPedreiros, qtdServentes } = getTeamCounts(config);
+  const prodEquipeDia = Math.max(service.produtividadeDia, 0.01) * qtdPedreiros;
+  const custoPedreiroUnit = (config.diariaPedreiro * qtdPedreiros) / prodEquipeDia;
+  const custoServenteUnit = (config.diariaServente * qtdServentes) / prodEquipeDia;
   const custoBaseUnit = custoPedreiroUnit + custoServenteUnit;
   const custoComEncargosUnit =
     custoBaseUnit * (1 + Math.max(config.encargosPercent, 0) / 100);
@@ -384,11 +395,10 @@ export function calcEntryComputed(
     laborServices[0];
   const { custoComEncargosUnit } = calcLaborUnitCost(service, laborConfig);
 
-  const prod = Math.max(service.produtividadeDia, 0.01);
-  const masonDays = quantidadeLabor / prod;
-  const helperDays = laborConfig.incluirServente
-    ? (quantidadeLabor * service.coefServente) / prod
-    : 0;
+  const { qtdPedreiros, qtdServentes } = getTeamCounts(laborConfig);
+  const prodEquipeDia = Math.max(service.produtividadeDia, 0.01) * qtdPedreiros;
+  const masonDays = quantidadeLabor / prodEquipeDia;
+  const helperDays = qtdServentes > 0 ? masonDays : 0;
   const laborCost = quantidadeLabor * custoComEncargosUnit;
   const materialCost = calcMaterialsCost(materials, prices);
   const marginPct = Math.max(laborConfig.materialMarginPercent ?? 15, 0);

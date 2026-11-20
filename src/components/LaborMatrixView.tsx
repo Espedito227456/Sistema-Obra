@@ -22,7 +22,13 @@ import {
   MARKET_PROFILES_2026,
   MarketProfilePreset,
 } from '../data/presets';
-import { calcLaborUnitCost, formatBRL, formatNum } from '../utils/calculations';
+import {
+  calcLaborUnitCost,
+  formatBRL,
+  formatNum,
+  getMinTeamDailyCost,
+  getTeamCounts,
+} from '../utils/calculations';
 
 interface Props {
   project: ConstructionProject;
@@ -59,6 +65,8 @@ export const LaborMatrixView: React.FC<Props> = ({
   onApplyMarketProfile,
 }) => {
   const { laborConfig, laborServices, materialPrices } = project;
+  const { qtdPedreiros, qtdServentes } = getTeamCounts(laborConfig);
+  const teamDailyCost = getMinTeamDailyCost(laborConfig);
 
   const [showMaterialPrices, setShowMaterialPrices] = useState(false);
 
@@ -152,24 +160,41 @@ export const LaborMatrixView: React.FC<Props> = ({
 
           <button
             type="button"
-            onClick={() =>
+            onClick={() => {
+              const nextInclude = !laborConfig.incluirServente;
               onUpdateLaborConfig({
-                incluirServente: !laborConfig.incluirServente,
-              })
-            }
+                incluirServente: nextInclude,
+                qtdServentes: nextInclude ? Math.max(qtdServentes, 1) : 0,
+              });
+            }}
             className={`min-h-[40px] whitespace-nowrap shrink-0 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors ${
-              laborConfig.incluirServente
+              laborConfig.incluirServente && qtdServentes > 0
                 ? 'bg-blue-700 text-white hover:bg-blue-800'
                 : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
             }`}
           >
-            {laborConfig.incluirServente
+            {laborConfig.incluirServente && qtdServentes > 0
               ? 'Incluindo Servente'
               : 'Só Pedreiro'}
           </button>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-700">
+              Qtd. de Pedreiros
+            </label>
+            {numInput(
+              qtdPedreiros,
+              (v) =>
+                onUpdateLaborConfig({
+                  qtdPedreiros: Math.max(1, Math.round(v)),
+                }),
+              '1',
+              1
+            )}
+          </div>
+
           <div>
             <label className="mb-1.5 block text-xs font-medium text-slate-700">
               Diária do Pedreiro (R$)
@@ -181,12 +206,54 @@ export const LaborMatrixView: React.FC<Props> = ({
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-slate-700">
+              Qtd. de Serventes
+            </label>
+            {numInput(
+              qtdServentes,
+              (v) => {
+                const count = Math.max(0, Math.round(v));
+                onUpdateLaborConfig({
+                  qtdServentes: count,
+                  incluirServente: count > 0,
+                });
+              },
+              '1',
+              0
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-700">
               Diária do Servente (R$)
             </label>
             {numInput(laborConfig.diariaServente, (v) =>
               onUpdateLaborConfig({ diariaServente: v })
             )}
           </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs">
+          <span className="text-slate-600">
+            Equipe selecionada:{' '}
+            <strong className="font-semibold text-slate-900">
+              {qtdPedreiros} {qtdPedreiros === 1 ? 'pedreiro' : 'pedreiros'}
+            </strong>
+            {qtdServentes > 0 ? (
+              <>
+                {' '}
+                +{' '}
+                <strong className="font-semibold text-slate-900">
+                  {qtdServentes}{' '}
+                  {qtdServentes === 1 ? 'servente' : 'serventes'}
+                </strong>
+              </>
+            ) : (
+              ' (sem servente)'
+            )}
+          </span>
+          <span className="font-mono font-bold tabular-nums text-blue-700">
+            Diária total da equipe: {formatBRL(teamDailyCost)}/dia
+          </span>
         </div>
 
         {/* Botões rápidos de referência regional */}
@@ -456,6 +523,9 @@ export const LaborMatrixView: React.FC<Props> = ({
                       <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                         <span className="font-mono tabular-nums">
                           {formatNum(srv.produtividadeDia, 1)} {srv.unidade}/dia
+                          {qtdPedreiros > 1
+                            ? ` por pedreiro (${formatNum(srv.produtividadeDia * qtdPedreiros, 1)} ${srv.unidade}/dia na equipe)`
+                            : ''}
                         </span>
                         {srv.precoFixoUnit && srv.precoFixoUnit > 0 && (
                           <>

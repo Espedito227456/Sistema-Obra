@@ -20,6 +20,7 @@ import {
   formatBRL,
   formatNum,
   getMinTeamDailyCost,
+  getTeamCounts,
   ProjectSummary,
 } from '../utils/calculations';
 
@@ -34,6 +35,9 @@ interface Props {
   onDeleteEntry: (id: string) => void;
   onClearEntries: () => void;
   onUpdateMaterialMargin: (pct: number) => void;
+  onUpdateLaborConfig: (
+    patch: Partial<ConstructionProject['laborConfig']>
+  ) => void;
 }
 
 interface SimpleServiceOption {
@@ -360,7 +364,9 @@ export const EasyQuoteView: React.FC<Props> = ({
   onDeleteEntry,
   onClearEntries,
   onUpdateMaterialMargin,
+  onUpdateLaborConfig,
 }) => {
+  const { qtdPedreiros, qtdServentes } = getTeamCounts(project.laborConfig);
   const [selectedKeys, setSelectedKeys] = useState<string[]>(
     INITIAL_SELECTED_KEYS
   );
@@ -793,6 +799,87 @@ export const EasyQuoteView: React.FC<Props> = ({
             >
               Mão de Obra + Materiais
             </button>
+          </div>
+        </div>
+
+        {/* Seleção de Quantidade de Profissionais na Equipe */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-xs">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-700">Pedreiros:</span>
+              <div className="flex items-center overflow-hidden rounded-md border border-slate-300 bg-white">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateLaborConfig({
+                      qtdPedreiros: Math.max(1, qtdPedreiros - 1),
+                    })
+                  }
+                  disabled={qtdPedreiros <= 1}
+                  className="min-h-[34px] min-w-[32px] px-2 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-35"
+                  aria-label="Diminuir pedreiros"
+                >
+                  −
+                </button>
+                <span className="min-w-[28px] text-center font-mono text-xs font-bold tabular-nums text-slate-900">
+                  {qtdPedreiros}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateLaborConfig({ qtdPedreiros: qtdPedreiros + 1 })
+                  }
+                  className="min-h-[34px] min-w-[32px] px-2 font-semibold text-slate-700 hover:bg-slate-100"
+                  aria-label="Aumentar pedreiros"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-700">Serventes:</span>
+              <div className="flex items-center overflow-hidden rounded-md border border-slate-300 bg-white">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = Math.max(0, qtdServentes - 1);
+                    onUpdateLaborConfig({
+                      qtdServentes: next,
+                      incluirServente: next > 0,
+                    });
+                  }}
+                  disabled={qtdServentes <= 0}
+                  className="min-h-[34px] min-w-[32px] px-2 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-35"
+                  aria-label="Diminuir serventes"
+                >
+                  −
+                </button>
+                <span className="min-w-[28px] text-center font-mono text-xs font-bold tabular-nums text-slate-900">
+                  {qtdServentes}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateLaborConfig({
+                      qtdServentes: qtdServentes + 1,
+                      incluirServente: true,
+                    })
+                  }
+                  className="min-h-[34px] min-w-[32px] px-2 font-semibold text-slate-700 hover:bg-slate-100"
+                  aria-label="Aumentar serventes"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-slate-600">
+            Diária total da equipe:{' '}
+            <span className="font-mono font-semibold tabular-nums text-slate-900">
+              {formatBRL(minDailyLabor)}/dia
+            </span>
           </div>
         </div>
 

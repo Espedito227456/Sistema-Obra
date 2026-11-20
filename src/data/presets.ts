@@ -424,6 +424,8 @@ export const DEFAULT_PROJECT: ConstructionProject = {
   laborConfig: {
     diariaPedreiro: 200,
     diariaServente: 125,
+    qtdPedreiros: 1,
+    qtdServentes: 1,
     incluirServente: true,
     encargosPercent: 0,
     bdiPercent: 8,
