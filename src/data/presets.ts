@@ -81,7 +81,7 @@ export const MARKET_LABOR_BENCHMARKS: Record<
   alvenaria_9: { min: 40, max: 75, fonte: 'Mercado 2026: R$ 40–75/m²' },
   alvenaria_14: { min: 48, max: 90, fonte: 'Mercado 2026: R$ 48–90/m²' },
   alvenaria_macico: { min: 65, max: 110, fonte: 'Mercado 2026: R$ 65–110/m²' },
-  chapisco: { min: 15, max: 30, fonte: 'Mercado 2026: R$ 15–30/m²' },
+  chapisco: { min: 3, max: 12, fonte: 'SINAPI/Mercado 2026: R$ 3,00–12,00/m²' },
   emboco_interno: { min: 38, max: 60, fonte: 'Mercado 2026: R$ 38–60/m²' },
   emboco_andaime: { min: 45, max: 65, fonte: 'Mercado 2026: R$ 45–65/m²' },
   contrapiso: { min: 30, max: 50, fonte: 'Mercado 2026: R$ 30–50/m²' },
@@ -91,6 +91,8 @@ export const MARKET_LABOR_BENCHMARKS: Record<
   pilares_concreto: { min: 450, max: 750, fonte: 'Ref. técnica: R$ 450–750/m³' },
   vigas_concreto: { min: 400, max: 680, fonte: 'Ref. técnica: R$ 400–680/m³' },
   laje_concreto: { min: 32, max: 55, fonte: 'Mercado 2026: R$ 32–55/m²' },
+  baldrame_direto: { min: 40, max: 80, fonte: 'Mercado 2026: R$ 40–80/m' },
+  baldrame_caixaria: { min: 80, max: 150, fonte: 'Mercado 2026: R$ 80–150/m' },
 };
 
 export const PCI_REFERENCE_ITEMS: Omit<
@@ -121,6 +123,24 @@ export const PCI_REFERENCE_ITEMS: Omit<
 
 export const LABOR_SERVICES_DEFAULT: LaborServiceRate[] = [
   {
+    id: 'baldrame_direto',
+    nome: 'Fundação: Baldrame direto no chão (vala sem caixaria)',
+    unidade: 'm',
+    produtividadeDia: 6.0,
+    coefServente: 1.0,
+    pciItemId: 2,
+    corePlanilha: false,
+  },
+  {
+    id: 'baldrame_caixaria',
+    nome: 'Fundação: Baldrame com caixaria (fôrma de madeira)',
+    unidade: 'm',
+    produtividadeDia: 3.5,
+    coefServente: 1.0,
+    pciItemId: 2,
+    corePlanilha: false,
+  },
+  {
     id: 'alvenaria_9',
     nome: 'Alvenaria com 9 cm de largura (tijolo furado)',
     unidade: 'm²',
@@ -149,10 +169,10 @@ export const LABOR_SERVICES_DEFAULT: LaborServiceRate[] = [
   },
   {
     id: 'chapisco',
-    nome: 'Chapisco',
+    nome: 'Chapisco em parede',
     unidade: 'm²',
-    produtividadeDia: 17.5,
-    coefServente: 0.5,
+    produtividadeDia: 100,
+    coefServente: 1.0,
     pciItemId: 9,
     corePlanilha: true,
   },

@@ -41,6 +41,31 @@ interface SimpleServiceOption {
 
 const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
+    type: 'baldrame_direto',
+    titulo: 'Fundação / Baldrame',
+    template: {
+      descricao: 'Baldrame direto no chão (15x30cm)',
+      calculatorType: 'baldrame_direto',
+      laborServiceId: 'baldrame_direto',
+      pciItemId: 2,
+      propCimento: 1,
+      propCal: 0,
+      propAreia: 2.5,
+      propBrita: 3,
+      areaM2: 0,
+      larguraCm: 15,
+      alturaCm: 30,
+      comprimentoCm: 0,
+      alturaM: 0,
+      comprimentoM: 40,
+      espessuraCm: 0,
+      espessuraMm: 0,
+      juntaCm: 0,
+      juntaMm: 0,
+      quantidadeUnid: 0,
+    },
+  },
+  {
     type: 'alvenaria_furado',
     titulo: 'Parede (Tijolo)',
     template: {
@@ -352,10 +377,13 @@ export const EasyQuoteView: React.FC<Props> = ({
     project.materialPrices,
   ]);
 
+  const isBaldrame =
+    selectedType === 'baldrame_direto' || selectedType === 'baldrame_caixaria';
   const isPillar =
     selectedType === 'pilar_embutido' || selectedType === 'pilar_isolado';
   const isViga = selectedType === 'vigas';
   const isConcrete =
+    isBaldrame ||
     isPillar ||
     isViga ||
     selectedType === 'piso_concreto' ||
@@ -508,10 +536,11 @@ export const EasyQuoteView: React.FC<Props> = ({
 
         {/* Grade de botões diretos */}
         <div className="border-b border-slate-200 bg-slate-50/70 p-4 sm:px-6">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
             {SIMPLE_OPTIONS.map((opt) => {
               const active =
                 selectedType === opt.type ||
+                (opt.type === 'baldrame_direto' && isBaldrame) ||
                 (opt.type === 'pilar_embutido' &&
                   selectedType === 'pilar_isolado');
               return (
@@ -558,7 +587,7 @@ export const EasyQuoteView: React.FC<Props> = ({
                     draft.quantidadeUnid,
                     (v) => setDraft((d) => ({ ...d, quantidadeUnid: v }))
                   )
-                ) : isViga ? (
+                ) : isViga || isBaldrame ? (
                   numInput(
                     'Comprimento Total (m)',
                     draft.comprimentoM,
@@ -573,6 +602,68 @@ export const EasyQuoteView: React.FC<Props> = ({
                 )}
               </div>
             </div>
+
+            {isBaldrame && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                  Como será feito o baldrame?
+                </label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedType('baldrame_direto');
+                      setDraft((d) => ({
+                        ...d,
+                        calculatorType: 'baldrame_direto',
+                        laborServiceId: 'baldrame_direto',
+                        descricao: d.descricao.startsWith('Baldrame')
+                          ? 'Baldrame direto no chão (15x30cm)'
+                          : d.descricao,
+                      }));
+                    }}
+                    className={`min-h-[44px] rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                      selectedType === 'baldrame_direto'
+                        ? 'border-blue-700 bg-blue-50 text-blue-900'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="font-semibold">
+                      Direto no chão (sem caixaria)
+                    </div>
+                    <div className="mt-0.5 text-[11px] opacity-80">
+                      Cavado direto na vala · Ref. R$ 40–80/m
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedType('baldrame_caixaria');
+                      setDraft((d) => ({
+                        ...d,
+                        calculatorType: 'baldrame_caixaria',
+                        laborServiceId: 'baldrame_caixaria',
+                        descricao: d.descricao.startsWith('Baldrame')
+                          ? 'Baldrame com caixaria (15x30cm)'
+                          : d.descricao,
+                      }));
+                    }}
+                    className={`min-h-[44px] rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                      selectedType === 'baldrame_caixaria'
+                        ? 'border-blue-700 bg-blue-50 text-blue-900'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="font-semibold">
+                      Com caixaria (fôrma de madeira)
+                    </div>
+                    <div className="mt-0.5 text-[11px] opacity-80">
+                      Com tábuas laterais e desforma · Ref. R$ 80–150/m
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {isPillar && (
               <div className="sm:w-1/2">
@@ -756,12 +847,20 @@ export const EasyQuoteView: React.FC<Props> = ({
                       </>
                     )}
 
-                    {isViga &&
-                      numInput(
-                        'Altura Viga (cm)',
-                        draft.alturaCm,
-                        (v) => setDraft((d) => ({ ...d, alturaCm: v }))
-                      )}
+                    {(isViga || isBaldrame) && (
+                      <>
+                        {numInput(
+                          'Largura (cm)',
+                          draft.larguraCm,
+                          (v) => setDraft((d) => ({ ...d, larguraCm: v }))
+                        )}
+                        {numInput(
+                          'Altura (cm)',
+                          draft.alturaCm,
+                          (v) => setDraft((d) => ({ ...d, alturaCm: v }))
+                        )}
+                      </>
+                    )}
 
                     {isPillar && (
                       <>
@@ -1028,7 +1127,10 @@ export const EasyQuoteView: React.FC<Props> = ({
               const isPillarRow =
                 entry.calculatorType === 'pilar_embutido' ||
                 entry.calculatorType === 'pilar_isolado';
-              const isVigaRow = entry.calculatorType === 'vigas';
+              const isLinearRow =
+                entry.calculatorType === 'vigas' ||
+                entry.calculatorType === 'baldrame_direto' ||
+                entry.calculatorType === 'baldrame_caixaria';
 
               return (
                 <div
@@ -1067,7 +1169,7 @@ export const EasyQuoteView: React.FC<Props> = ({
                         value={
                           isPillarRow
                             ? entry.quantidadeUnid
-                            : isVigaRow
+                            : isLinearRow
                             ? entry.comprimentoM
                             : entry.areaM2
                         }
@@ -1078,7 +1180,7 @@ export const EasyQuoteView: React.FC<Props> = ({
                           );
                           if (isPillarRow) {
                             onUpdateEntry(entry.id, { quantidadeUnid: val });
-                          } else if (isVigaRow) {
+                          } else if (isLinearRow) {
                             onUpdateEntry(entry.id, { comprimentoM: val });
                           } else {
                             onUpdateEntry(entry.id, { areaM2: val });
@@ -1087,7 +1189,7 @@ export const EasyQuoteView: React.FC<Props> = ({
                         className="min-h-[38px] w-20 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-right font-mono text-xs font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none"
                       />
                       <span className="text-xs text-slate-500">
-                        {isPillarRow ? 'un' : isVigaRow ? 'm' : 'm²'}
+                        {isPillarRow ? 'un' : isLinearRow ? 'm' : 'm²'}
                       </span>
                     </div>
 

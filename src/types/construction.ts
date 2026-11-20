@@ -35,6 +35,8 @@ export interface MaterialUnitPrices {
 }
 
 export type CalculatorType =
+  | 'baldrame_direto'
+  | 'baldrame_caixaria'
   | 'alvenaria_furado'
   | 'alvenaria_macico'
   | 'contrapiso'

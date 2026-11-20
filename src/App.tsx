@@ -52,7 +52,36 @@ function loadInitialState(): StoredState {
     if (raw) {
       const parsed = JSON.parse(raw) as StoredState;
       if (Array.isArray(parsed.projects) && parsed.projects.length > 0) {
-        return parsed;
+        const baldrameDefaults = LABOR_SERVICES_DEFAULT.filter(
+          (s) => s.id === 'baldrame_direto' || s.id === 'baldrame_caixaria'
+        );
+        const migratedProjects = parsed.projects.map((p) => {
+          const existingIds = new Set(p.laborServices.map((s) => s.id));
+          const missing = baldrameDefaults
+            .filter((d) => !existingIds.has(d.id))
+            .map((d) => ({ ...d }));
+          const withBaldrame =
+            missing.length > 0
+              ? [...missing, ...p.laborServices]
+              : p.laborServices;
+          const updatedServices = withBaldrame.map((s) =>
+            s.id === 'chapisco' &&
+            s.produtividadeDia === 17.5 &&
+            s.coefServente === 0.5
+              ? {
+                  ...s,
+                  nome: 'Chapisco em parede',
+                  produtividadeDia: 100,
+                  coefServente: 1.0,
+                }
+              : s
+          );
+          return { ...p, laborServices: updatedServices };
+        });
+        return {
+          ...parsed,
+          projects: migratedProjects,
+        };
       }
     }
   } catch {

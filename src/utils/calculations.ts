@@ -11,6 +11,7 @@ import {
   ScheduleStage,
   ServiceEntry,
 } from '../types/construction';
+import { LABOR_SERVICES_DEFAULT } from '../data/presets';
 
 const EMPTY_MATERIALS: MaterialsBreakdown = {
   cimentoSacos50kg: 0,
@@ -127,6 +128,32 @@ export function calcMaterialsForEntry(entry: ServiceEntry): {
   let unidadeLabor: 'm²' | 'm³' | 'm' = 'm²';
 
   switch (entry.calculatorType) {
+    case 'baldrame_direto':
+    case 'baldrame_caixaria': {
+      const compM = Math.max(entry.comprimentoM, 0);
+      const vol =
+        (Math.max(entry.larguraCm, 0) / 100) *
+        (Math.max(entry.alturaCm, 0) / 100) *
+        compM;
+      // Direto no chão consome ~10% extra por irregularidade da vala
+      const fatorExtra = entry.calculatorType === 'baldrame_direto' ? 1.1 : 1.0;
+      const conc = calcConcretoPorVolume(
+        vol,
+        entry.propCimento,
+        entry.propAreia,
+        entry.propBrita,
+        fatorExtra
+      );
+      m.cimentoSacos50kg = conc.cimentoSacos;
+      m.areiaM3 = conc.areiaM3;
+      m.areiaSacos20kg = conc.areiaM3 * SACOS_20KG_POR_M3;
+      m.britaM3 = conc.britaM3;
+      m.britaSacos20kg = conc.britaM3 * SACOS_20KG_POR_M3;
+      quantidadeLabor = compM;
+      unidadeLabor = 'm';
+      break;
+    }
+
     case 'alvenaria_furado':
     case 'alvenaria_macico': {
       const comp = Math.max(entry.comprimentoCm, 1);
@@ -337,7 +364,9 @@ export function calcEntryComputed(
 ): EntryComputed {
   const { materials, quantidadeLabor, unidadeLabor } = calcMaterialsForEntry(entry);
   const service =
-    laborServices.find((s) => s.id === entry.laborServiceId) ?? laborServices[0];
+    laborServices.find((s) => s.id === entry.laborServiceId) ??
+    LABOR_SERVICES_DEFAULT.find((s) => s.id === entry.laborServiceId) ??
+    laborServices[0];
   const { custoComEncargosUnit } = calcLaborUnitCost(service, laborConfig);
 
   const prod = Math.max(service.produtividadeDia, 0.01);
