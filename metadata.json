@@ -1,0 +1,6 @@
+{
+  "name": "ObraBase — Automação de Mão de Obra, Materiais e PCI",
+  "description": "Sistema integrado para profissionais da construção civil: cálculo automatizado de mão de obra por m², quantitativo de materiais com traços e geração da proposta PCI CAIXA com cronograma físico-financeiro.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
