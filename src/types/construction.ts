@@ -10,6 +10,7 @@ export interface LaborConfig {
   incluirServente: boolean;
   encargosPercent: number;
   bdiPercent: number;
+  materialMarginPercent?: number;
 }
 
 export interface LaborServiceRate {
@@ -200,7 +201,9 @@ export interface EntryComputed {
   masonDays: number;
   helperDays: number;
   materialCost: number;
+  materialClientCost: number;
   totalCost: number;
+  totalClientCost: number;
   materials: MaterialsBreakdown;
 }
 

@@ -399,7 +399,7 @@ export function createInitialPciItems(withSampleManualCosts = true): PciItemConf
 
 export const DEFAULT_PROJECT: ConstructionProject = {
   id: 'obra-modelo-110m2',
-  nomeObra: 'Residência Unifamiliar — Padrão Normal (110 m²)',
+  nomeObra: 'Exemplo: Casa 110 m²',
   updatedAt: '2026-11-19',
   laborConfig: {
     diariaPedreiro: 200,
@@ -407,6 +407,7 @@ export const DEFAULT_PROJECT: ConstructionProject = {
     incluirServente: true,
     encargosPercent: 0,
     bdiPercent: 8,
+    materialMarginPercent: 15,
   },
   laborServices: LABOR_SERVICES_DEFAULT,
   materialPrices: MATERIAL_PRICES_DEFAULT,
@@ -646,5 +647,9 @@ export const DEFAULT_PROJECT: ConstructionProject = {
     { etapa: '7', percentEtapa: 11.0 },
     { etapa: '8', percentEtapa: 8.0 },
   ],
-  metadata: DEFAULT_METADATA,
+  metadata: {
+    ...DEFAULT_METADATA,
+    proponente: '',
+    rteNome: '',
+  },
 };

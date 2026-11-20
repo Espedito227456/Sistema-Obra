@@ -13,11 +13,7 @@ import {
   ConstructionProject,
   ServiceEntry,
 } from '../types/construction';
-import {
-  PCI_REFERENCE_ITEMS,
-  TRACOS_ARGAMASSA,
-  TRACOS_CONCRETO,
-} from '../data/presets';
+import { TRACOS_ARGAMASSA, TRACOS_CONCRETO } from '../data/presets';
 import {
   calcEntryComputed,
   formatBRL,
@@ -33,20 +29,20 @@ interface Props {
   onAddEntry: (entry: ServiceEntry) => void;
   onUpdateEntry: (id: string, patch: Partial<ServiceEntry>) => void;
   onDeleteEntry: (id: string) => void;
+  onClearEntries: () => void;
+  onUpdateMaterialMargin: (pct: number) => void;
 }
 
 interface SimpleServiceOption {
   type: CalculatorType;
   titulo: string;
-  subtitulo: string;
   template: Omit<ServiceEntry, 'id'>;
 }
 
 const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
     type: 'alvenaria_furado',
-    titulo: 'Parede / Tijolo Furado',
-    subtitulo: 'Tijolo 9x19x19 cm',
+    titulo: 'Parede (Tijolo)',
     template: {
       descricao: 'Parede de alvenaria (tijolo furado)',
       calculatorType: 'alvenaria_furado',
@@ -72,9 +68,8 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
     type: 'chapisco',
     titulo: 'Chapisco',
-    subtitulo: 'Parede ou teto',
     template: {
-      descricao: 'Chapisco em parede (traço 1:4)',
+      descricao: 'Chapisco em parede',
       calculatorType: 'chapisco',
       laborServiceId: 'chapisco',
       pciItemId: 9,
@@ -98,9 +93,8 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
     type: 'emboco',
     titulo: 'Reboco / Emboço',
-    subtitulo: 'Interno ou fachada',
     template: {
-      descricao: 'Reboco / emboço em paredes (2 cm)',
+      descricao: 'Reboco / emboço em paredes',
       calculatorType: 'emboco',
       laborServiceId: 'emboco_interno',
       pciItemId: 9,
@@ -124,9 +118,8 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
     type: 'contrapiso',
     titulo: 'Contrapiso',
-    subtitulo: 'Regularização de piso',
     template: {
-      descricao: 'Contrapiso de cimento e areia (3 cm)',
+      descricao: 'Contrapiso de cimento e areia',
       calculatorType: 'contrapiso',
       laborServiceId: 'contrapiso',
       pciItemId: 12,
@@ -150,9 +143,8 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
     type: 'ceramica',
     titulo: 'Piso / Cerâmica',
-    subtitulo: 'Com argamassa e rejunte',
     template: {
-      descricao: 'Assentamento de piso cerâmico / porcelanato',
+      descricao: 'Assentamento de piso / cerâmica',
       calculatorType: 'ceramica',
       laborServiceId: 'ceramica_grande',
       pciItemId: 12,
@@ -175,10 +167,9 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   },
   {
     type: 'piso_concreto',
-    titulo: 'Piso de Concreto',
-    subtitulo: 'Calçada ou garagem',
+    titulo: 'Piso Concreto',
     template: {
-      descricao: 'Piso de concreto armado (7 cm)',
+      descricao: 'Piso de concreto / calçada',
       calculatorType: 'piso_concreto',
       laborServiceId: 'piso_concreto',
       pciItemId: 12,
@@ -202,9 +193,8 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
     type: 'pilar_embutido',
     titulo: 'Pilares',
-    subtitulo: 'Embutido ou isolado',
     template: {
-      descricao: 'Pilares em concreto (14x25cm, h=3,0m)',
+      descricao: 'Pilares em concreto (14x25cm)',
       calculatorType: 'pilar_embutido',
       laborServiceId: 'pilares_concreto',
       pciItemId: 3,
@@ -227,10 +217,9 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   },
   {
     type: 'vigas',
-    titulo: 'Vigas e Cintas',
-    subtitulo: 'Metros lineares',
+    titulo: 'Vigas / Cintas',
     template: {
-      descricao: 'Vigas e cintas de amarração (14x30cm)',
+      descricao: 'Vigas e cintas de amarração',
       calculatorType: 'vigas',
       laborServiceId: 'vigas_concreto',
       pciItemId: 3,
@@ -253,10 +242,9 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   },
   {
     type: 'laje',
-    titulo: 'Laje de Concreto',
-    subtitulo: 'Capa de concretagem',
+    titulo: 'Laje',
     template: {
-      descricao: 'Concretagem de laje (capa 5 cm)',
+      descricao: 'Concretagem de laje',
       calculatorType: 'laje',
       laborServiceId: 'laje_concreto',
       pciItemId: 3,
@@ -280,9 +268,8 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
     type: 'alvenaria_macico',
     titulo: 'Tijolo Maciço',
-    subtitulo: 'À vista 9 cm',
     template: {
-      descricao: 'Alvenaria de tijolo maciço à vista',
+      descricao: 'Parede de tijolo maciço',
       calculatorType: 'alvenaria_macico',
       laborServiceId: 'alvenaria_macico',
       pciItemId: 4,
@@ -313,6 +300,8 @@ export const EasyQuoteView: React.FC<Props> = ({
   onAddEntry,
   onUpdateEntry,
   onDeleteEntry,
+  onClearEntries,
+  onUpdateMaterialMargin,
 }) => {
   const [selectedType, setSelectedType] =
     useState<CalculatorType>('alvenaria_furado');
@@ -322,6 +311,7 @@ export const EasyQuoteView: React.FC<Props> = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
 
   const handleSelectOption = (opt: SimpleServiceOption) => {
     setEditingEntryId(null);
@@ -378,7 +368,7 @@ export const EasyQuoteView: React.FC<Props> = ({
   const displayedTotal =
     quoteMode === 'labor_only'
       ? summary.totalAutoLabor
-      : summary.totalAutoLabor + summary.totalAutoMaterial;
+      : summary.totalAutoLabor + summary.totalAutoMaterialWithMargin;
 
   const numInput = (
     label: string,
@@ -405,27 +395,25 @@ export const EasyQuoteView: React.FC<Props> = ({
   );
 
   return (
-    <div className="space-y-8">
-      {/* Resumo Direto do Orçamento + Seletor Só Mão de Obra vs Completo */}
+    <div className="space-y-6">
+      {/* Resumo Direto + Seletor Só Mão de Obra vs Completo */}
       <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs font-medium text-slate-500">
               {quoteMode === 'labor_only'
-                ? 'Total da Mão de Obra (Serviços Lançados)'
-                : 'Total Geral (Mão de Obra + Materiais)'}
+                ? 'Total Só Mão de Obra'
+                : 'Total Mão de Obra + Materiais'}
             </p>
             <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-slate-900">
               {formatBRL(displayedTotal)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              {project.entries.length} serviços ·{' '}
-              <span className="font-mono tabular-nums">
-                {formatNum(summary.totalMasonDays, 1)}
-              </span>{' '}
-              dias de pedreiro · Diária ref.{' '}
-              <span className="font-mono tabular-nums">
-                {formatBRL(project.laborConfig.diariaPedreiro)}
+              {project.entries.length}{' '}
+              {project.entries.length === 1 ? 'serviço' : 'serviços'} · Prazo
+              estimado:{' '}
+              <span className="font-mono font-medium tabular-nums text-slate-700">
+                ~{Math.ceil(summary.totalMasonDays)} dias
               </span>
             </p>
           </div>
@@ -455,23 +443,70 @@ export const EasyQuoteView: React.FC<Props> = ({
             </button>
           </div>
         </div>
+
+        {quoteMode === 'full' && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-slate-700">
+                Lucro nos Materiais:
+              </span>
+              {[10, 15, 20].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => onUpdateMaterialMargin(pct)}
+                  className={`min-h-[34px] rounded-md border px-2.5 py-1 font-mono text-xs font-semibold transition-colors ${
+                    summary.materialMarginPercent === pct
+                      ? 'border-blue-700 bg-blue-700 text-white'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {pct}%
+                </button>
+              ))}
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={summary.materialMarginPercent}
+                  onChange={(e) =>
+                    onUpdateMaterialMargin(
+                      Math.max(0, parseFloat(e.target.value) || 0)
+                    )
+                  }
+                  className="min-h-[34px] w-16 rounded-md border border-slate-300 bg-white px-2 py-1 text-right font-mono text-xs font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none"
+                />
+                <span className="text-slate-500">%</span>
+              </div>
+            </div>
+
+            <div className="text-slate-600">
+              Custo loja:{' '}
+              <span className="font-mono font-medium tabular-nums text-slate-800">
+                {formatBRL(summary.totalAutoMaterial)}
+              </span>{' '}
+              · Seu lucro nos materiais:{' '}
+              <span className="font-mono font-semibold tabular-nums text-green-700">
+                +{formatBRL(summary.totalAutoMaterialMargin)}
+              </span>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Passo 1: Escolher o Serviço e Digitar a Medida */}
       <section className="rounded-lg border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+        <div className="border-b border-slate-200 px-5 py-3.5 sm:px-6">
           <h2 className="text-base font-semibold text-slate-900">
             {editingEntryId
-              ? 'Editando Serviço do Orçamento'
-              : '1. Escolha o serviço e informe o tamanho'}
+              ? 'Editando Serviço'
+              : '1. Escolha o serviço e digite o tamanho'}
           </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            O cálculo de mão de obra e lista de materiais já vem configurado no
-            padrão de obra.
-          </p>
         </div>
 
-        {/* Grade de botões grandes e diretos */}
+        {/* Grade de botões diretos */}
         <div className="border-b border-slate-200 bg-slate-50/70 p-4 sm:px-6">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
             {SIMPLE_OPTIONS.map((opt) => {
@@ -484,22 +519,13 @@ export const EasyQuoteView: React.FC<Props> = ({
                   key={opt.type}
                   type="button"
                   onClick={() => handleSelectOption(opt)}
-                  className={`min-h-[54px] rounded-lg border px-3 py-2 text-left transition-colors ${
+                  className={`min-h-[44px] rounded-lg border px-3 py-2 text-center text-xs font-semibold transition-colors ${
                     active
                       ? 'border-blue-700 bg-blue-700 text-white'
                       : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50'
                   }`}
                 >
-                  <div className="truncate text-xs font-semibold">
-                    {opt.titulo}
-                  </div>
-                  <div
-                    className={`mt-0.5 truncate text-[11px] ${
-                      active ? 'text-blue-100' : 'text-slate-500'
-                    }`}
-                  >
-                    {opt.subtitulo}
-                  </div>
+                  {opt.titulo}
                 </button>
               );
             })}
@@ -507,61 +533,81 @@ export const EasyQuoteView: React.FC<Props> = ({
         </div>
 
         <div className="grid grid-cols-1 divide-y divide-slate-200 lg:grid-cols-12 lg:divide-x lg:divide-y-0">
-          {/* Campos essenciais */}
+          {/* Apenas o essencial por padrão */}
           <div className="space-y-4 p-5 sm:p-6 lg:col-span-7">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                Nome / Local do Serviço na Obra
-              </label>
-              <input
-                type="text"
-                value={draft.descricao}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, descricao: e.target.value }))
-                }
-                placeholder="Ex.: Paredes da sala e cozinha"
-                className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
-              />
-            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-12">
+              <div className="sm:col-span-7">
+                <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                  Nome do Serviço / Local
+                </label>
+                <input
+                  type="text"
+                  value={draft.descricao}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, descricao: e.target.value }))
+                  }
+                  placeholder="Ex.: Paredes da sala"
+                  className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                />
+              </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {isPillar ? (
-                <>
-                  {numInput(
-                    'Quantidade de Pilares (unid.)',
+              <div className="sm:col-span-5">
+                {isPillar ? (
+                  numInput(
+                    'Qtd. de Pilares (un)',
                     draft.quantidadeUnid,
                     (v) => setDraft((d) => ({ ...d, quantidadeUnid: v }))
-                  )}
-                  {numInput(
-                    'Altura de cada Pilar (m)',
-                    draft.alturaM,
-                    (v) => setDraft((d) => ({ ...d, alturaM: v })),
-                    '0.1'
-                  )}
-                </>
-              ) : isViga ? (
-                <>
-                  {numInput(
-                    'Comprimento Total das Vigas (metros)',
+                  )
+                ) : isViga ? (
+                  numInput(
+                    'Comprimento Total (m)',
                     draft.comprimentoM,
                     (v) => setDraft((d) => ({ ...d, comprimentoM: v }))
-                  )}
-                  {numInput(
-                    'Altura da Viga (cm)',
-                    draft.alturaCm,
-                    (v) => setDraft((d) => ({ ...d, alturaCm: v }))
-                  )}
-                </>
-              ) : (
-                <>
-                  {numInput(
-                    'Tamanho / Área do Serviço (m²)',
+                  )
+                ) : (
+                  numInput(
+                    'Área / Tamanho (m²)',
                     draft.areaM2,
                     (v) => setDraft((d) => ({ ...d, areaM2: v }))
-                  )}
+                  )
+                )}
+              </div>
+            </div>
+
+            {isPillar && (
+              <div className="sm:w-1/2">
+                {numInput(
+                  'Altura de cada Pilar (m)',
+                  draft.alturaM,
+                  (v) => setDraft((d) => ({ ...d, alturaM: v })),
+                  '0.1'
+                )}
+              </div>
+            )}
+
+            {/* Ajustes opcionais recolhidos por padrão */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((v) => !v)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-blue-700"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                {showAdvanced
+                  ? 'Ocultar opções avançadas'
+                  : 'Mudar tipo, traço ou espessura (opcional)'}
+                {showAdvanced ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </button>
+
+              {showAdvanced && (
+                <div className="mt-3 space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                      Tipo de Mão de Obra
+                      Tabela de Preço da Mão de Obra
                     </label>
                     <select
                       value={draft.laborServiceId}
@@ -571,7 +617,7 @@ export const EasyQuoteView: React.FC<Props> = ({
                           laborServiceId: e.target.value,
                         }))
                       }
-                      className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
+                      className="min-h-[42px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
                     >
                       {project.laborServices.map((ls) => (
                         <option key={ls.id} value={ls.id}>
@@ -580,35 +626,12 @@ export const EasyQuoteView: React.FC<Props> = ({
                       ))}
                     </select>
                   </div>
-                </>
-              )}
-            </div>
 
-            {/* Opções avançadas recolhidas por padrão */}
-            <div className="border-t border-slate-100 pt-3">
-              <button
-                type="button"
-                onClick={() => setShowAdvanced((v) => !v)}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-blue-700"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                {showAdvanced
-                  ? 'Ocultar ajustes de traço e espessura'
-                  : 'Ajustar traço, espessura ou medidas (opcional)'}
-                {showAdvanced ? (
-                  <ChevronUp className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                )}
-              </button>
-
-              {showAdvanced && (
-                <div className="mt-4 space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  {selectedType !== 'ceramica' && (
+                  {quoteMode === 'full' && selectedType !== 'ceramica' && (
                     <div>
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <span className="text-xs font-semibold text-slate-700">
-                          Traço da Mistura (em latas/partes)
+                          Traço da Mistura
                         </span>
                         <div className="flex flex-wrap gap-1">
                           {(isConcrete
@@ -629,7 +652,8 @@ export const EasyQuoteView: React.FC<Props> = ({
                               }
                               className="rounded border border-slate-300 bg-white px-2 py-1 font-mono text-[11px] text-blue-700 hover:bg-blue-50"
                             >
-                              {t.cimento}:{'cal' in t && t.cal > 0 ? `${t.cal}:` : ''}
+                              {t.cimento}:
+                              {'cal' in t && t.cal > 0 ? `${t.cal}:` : ''}
                               {t.areia}
                               {'brita' in t && t.brita > 0 ? `:${t.brita}` : ''}
                             </button>
@@ -645,7 +669,7 @@ export const EasyQuoteView: React.FC<Props> = ({
                         )}
                         {usesCal &&
                           numInput(
-                            'Cal (0 s/ cal)',
+                            'Cal',
                             draft.propCal,
                             (v) => setDraft((d) => ({ ...d, propCal: v })),
                             '0.5'
@@ -672,13 +696,13 @@ export const EasyQuoteView: React.FC<Props> = ({
                       selectedType === 'alvenaria_macico') && (
                       <>
                         {numInput(
-                          'Largura Tijolo (cm)',
+                          'Larg. Tijolo (cm)',
                           draft.larguraCm,
                           (v) => setDraft((d) => ({ ...d, larguraCm: v })),
                           '0.5'
                         )}
                         {numInput(
-                          'Altura Tijolo (cm)',
+                          'Alt. Tijolo (cm)',
                           draft.alturaCm,
                           (v) => setDraft((d) => ({ ...d, alturaCm: v })),
                           '0.5'
@@ -732,10 +756,17 @@ export const EasyQuoteView: React.FC<Props> = ({
                       </>
                     )}
 
+                    {isViga &&
+                      numInput(
+                        'Altura Viga (cm)',
+                        draft.alturaCm,
+                        (v) => setDraft((d) => ({ ...d, alturaCm: v }))
+                      )}
+
                     {isPillar && (
                       <>
                         {numInput(
-                          'Largura Pilar (cm)',
+                          'Larg. Pilar (cm)',
                           draft.larguraCm,
                           (v) => setDraft((d) => ({ ...d, larguraCm: v }))
                         )}
@@ -768,28 +799,6 @@ export const EasyQuoteView: React.FC<Props> = ({
                         </div>
                       </>
                     )}
-
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                        Etapa PCI
-                      </label>
-                      <select
-                        value={draft.pciItemId}
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...d,
-                            pciItemId: Number(e.target.value),
-                          }))
-                        }
-                        className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-2.5 text-xs text-slate-900"
-                      >
-                        {PCI_REFERENCE_ITEMS.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.id}. {item.nome.split('(')[0].trim()}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
                 </div>
               )}
@@ -800,99 +809,127 @@ export const EasyQuoteView: React.FC<Props> = ({
           <div className="flex flex-col justify-between bg-slate-50/70 p-5 sm:p-6 lg:col-span-5">
             <div className="space-y-4">
               <div className="rounded-lg border border-slate-200 bg-white p-4">
-                <div className="flex items-baseline justify-between">
+                <div className="flex items-baseline justify-between gap-2">
                   <span className="text-xs font-medium text-slate-500">
-                    Mão de Obra deste serviço
+                    Mão de Obra
                   </span>
                   <span className="font-mono text-xl font-bold tabular-nums text-blue-700">
                     {formatBRL(draftPreview.laborCost)}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  {formatBRL(draftPreview.laborUnitCost)}/{draftPreview.unidadeBase}{' '}
-                  · Tempo estimado:{' '}
+                  {formatBRL(draftPreview.laborUnitCost)}/
+                  {draftPreview.unidadeBase} · ~
                   <span className="font-mono font-medium text-slate-700 tabular-nums">
                     {formatNum(draftPreview.masonDays, 1)} dias
                   </span>
                 </p>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-4">
-                <div className="mb-2 flex items-baseline justify-between">
-                  <span className="text-xs font-medium text-slate-500">
-                    Materiais necessários (c/ perda)
-                  </span>
-                  <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
-                    {formatBRL(draftPreview.materialCost)}
-                  </span>
+              {quoteMode === 'full' && (
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="mb-2 flex items-baseline justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-500">
+                      Materiais (c/ {formatNum(summary.materialMarginPercent, 0)}% lucro)
+                    </span>
+                    <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
+                      {formatBRL(draftPreview.materialClientCost)}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-xs text-slate-700">
+                    {draftPreview.materials.cimentoSacos50kg > 0 && (
+                      <div className="flex justify-between">
+                        <span>Cimento (50 kg)</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatNum(
+                            Math.ceil(draftPreview.materials.cimentoSacos50kg),
+                            0
+                          )}{' '}
+                          sacos
+                        </span>
+                      </div>
+                    )}
+                    {draftPreview.materials.calSacos20kg > 0 && (
+                      <div className="flex justify-between">
+                        <span>Cal (20 kg)</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatNum(
+                            Math.ceil(draftPreview.materials.calSacos20kg),
+                            0
+                          )}{' '}
+                          sacos
+                        </span>
+                      </div>
+                    )}
+                    {draftPreview.materials.areiaM3 > 0 && (
+                      <div className="flex justify-between">
+                        <span>Areia</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatNum(draftPreview.materials.areiaM3, 2)} m³
+                        </span>
+                      </div>
+                    )}
+                    {draftPreview.materials.britaM3 > 0 && (
+                      <div className="flex justify-between">
+                        <span>Brita</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatNum(draftPreview.materials.britaM3, 2)} m³
+                        </span>
+                      </div>
+                    )}
+                    {draftPreview.materials.tijolosFuradoUnid > 0 && (
+                      <div className="flex justify-between">
+                        <span>Tijolo furado</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatNum(
+                            draftPreview.materials.tijolosFuradoUnid,
+                            0
+                          )}{' '}
+                          un
+                        </span>
+                      </div>
+                    )}
+                    {draftPreview.materials.tijolosMacicoUnid > 0 && (
+                      <div className="flex justify-between">
+                        <span>Tijolo maciço</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatNum(
+                            draftPreview.materials.tijolosMacicoUnid,
+                            0
+                          )}{' '}
+                          un
+                        </span>
+                      </div>
+                    )}
+                    {draftPreview.materials.argamassaSacos20kg > 0 && (
+                      <div className="flex justify-between">
+                        <span>Argamassa colante</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatNum(
+                            Math.ceil(
+                              draftPreview.materials.argamassaSacos20kg
+                            ),
+                            0
+                          )}{' '}
+                          sacos
+                        </span>
+                      </div>
+                    )}
+                    {draftPreview.materials.rejunteKg > 0 && (
+                      <div className="flex justify-between">
+                        <span>Rejunte</span>
+                        <span className="font-mono font-semibold tabular-nums">
+                          {formatNum(
+                            Math.ceil(draftPreview.materials.rejunteKg),
+                            0
+                          )}{' '}
+                          kg
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-1 text-xs text-slate-700">
-                  {draftPreview.materials.cimentoSacos50kg > 0 && (
-                    <div className="flex justify-between">
-                      <span>Cimento (50 kg)</span>
-                      <span className="font-mono font-semibold tabular-nums">
-                        {formatNum(Math.ceil(draftPreview.materials.cimentoSacos50kg), 0)} sacos
-                      </span>
-                    </div>
-                  )}
-                  {draftPreview.materials.calSacos20kg > 0 && (
-                    <div className="flex justify-between">
-                      <span>Cal (20 kg)</span>
-                      <span className="font-mono font-semibold tabular-nums">
-                        {formatNum(Math.ceil(draftPreview.materials.calSacos20kg), 0)} sacos
-                      </span>
-                    </div>
-                  )}
-                  {draftPreview.materials.areiaM3 > 0 && (
-                    <div className="flex justify-between">
-                      <span>Areia</span>
-                      <span className="font-mono font-semibold tabular-nums">
-                        {formatNum(draftPreview.materials.areiaM3, 2)} m³
-                      </span>
-                    </div>
-                  )}
-                  {draftPreview.materials.britaM3 > 0 && (
-                    <div className="flex justify-between">
-                      <span>Brita</span>
-                      <span className="font-mono font-semibold tabular-nums">
-                        {formatNum(draftPreview.materials.britaM3, 2)} m³
-                      </span>
-                    </div>
-                  )}
-                  {draftPreview.materials.tijolosFuradoUnid > 0 && (
-                    <div className="flex justify-between">
-                      <span>Tijolo furado</span>
-                      <span className="font-mono font-semibold tabular-nums">
-                        {formatNum(draftPreview.materials.tijolosFuradoUnid, 0)} un
-                      </span>
-                    </div>
-                  )}
-                  {draftPreview.materials.tijolosMacicoUnid > 0 && (
-                    <div className="flex justify-between">
-                      <span>Tijolo maciço</span>
-                      <span className="font-mono font-semibold tabular-nums">
-                        {formatNum(draftPreview.materials.tijolosMacicoUnid, 0)} un
-                      </span>
-                    </div>
-                  )}
-                  {draftPreview.materials.argamassaSacos20kg > 0 && (
-                    <div className="flex justify-between">
-                      <span>Argamassa colante (20 kg)</span>
-                      <span className="font-mono font-semibold tabular-nums">
-                        {formatNum(Math.ceil(draftPreview.materials.argamassaSacos20kg), 0)} sacos
-                      </span>
-                    </div>
-                  )}
-                  {draftPreview.materials.rejunteKg > 0 && (
-                    <div className="flex justify-between">
-                      <span>Rejunte</span>
-                      <span className="font-mono font-semibold tabular-nums">
-                        {formatNum(Math.ceil(draftPreview.materials.rejunteKg), 0)} kg
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -927,24 +964,59 @@ export const EasyQuoteView: React.FC<Props> = ({
         </div>
       </section>
 
-      {/* Passo 2: Lista Limpa de Serviços do Orçamento */}
+      {/* Passo 2: Lista Limpa de Serviços */}
       <section className="rounded-lg border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5 sm:px-6">
           <h2 className="text-base font-semibold text-slate-900">
-            2. Serviços neste Orçamento ({project.entries.length})
+            2. Serviços no Orçamento ({project.entries.length})
           </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Altere a medida diretamente ou clique em Editar / Excluir.
-          </p>
+
+          {project.entries.length > 0 && (
+            <div>
+              {confirmClearAll ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium text-red-700">
+                    Zerar lista?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClearEntries();
+                      setConfirmClearAll(false);
+                      setEditingEntryId(null);
+                    }}
+                    className="min-h-[34px] rounded bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
+                  >
+                    Sim
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClearAll(false)}
+                    className="min-h-[34px] rounded border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-600"
+                  >
+                    Não
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearAll(true)}
+                  className="min-h-[34px] rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  Limpar Lista
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {project.entries.length === 0 ? (
-          <div className="px-6 py-12 text-center">
+          <div className="px-6 py-10 text-center">
             <p className="text-sm font-medium text-slate-700">
               Nenhum serviço adicionado ainda.
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Escolha um serviço acima, digite o tamanho em m² e clique em
+              Escolha um serviço acima, digite o tamanho e clique em
               &ldquo;Colocar no Orçamento&rdquo;.
             </p>
           </div>
@@ -961,27 +1033,26 @@ export const EasyQuoteView: React.FC<Props> = ({
               return (
                 <div
                   key={entry.id}
-                  className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-slate-50/70 sm:px-6"
+                  className="flex flex-wrap items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-slate-50/70 sm:px-6"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-slate-900">
                       {entry.descricao}
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      Prazo est.:{' '}
                       <span className="font-mono tabular-nums">
-                        {formatNum(comp.masonDays, 1)}d
-                      </span>{' '}
-                      · Mão de obra:{' '}
-                      <span className="font-mono font-medium text-slate-700 tabular-nums">
-                        {formatBRL(comp.laborCost)}
+                        ~{Math.ceil(comp.masonDays)} dias
                       </span>
                       {quoteMode === 'full' && (
                         <>
                           {' '}
-                          · Materiais:{' '}
-                          <span className="font-mono font-medium text-slate-700 tabular-nums">
-                            {formatBRL(comp.materialCost)}
+                          · MO{' '}
+                          <span className="font-mono tabular-nums text-slate-700">
+                            {formatBRL(comp.laborCost)}
+                          </span>{' '}
+                          · Mat.{' '}
+                          <span className="font-mono tabular-nums text-slate-700">
+                            {formatBRL(comp.materialClientCost)}
                           </span>
                         </>
                       )}
@@ -989,7 +1060,6 @@ export const EasyQuoteView: React.FC<Props> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3">
-                    {/* Edição rápida da medida */}
                     <div className="flex items-center gap-1.5">
                       <input
                         type="number"
@@ -1025,7 +1095,7 @@ export const EasyQuoteView: React.FC<Props> = ({
                       {formatBRL(
                         quoteMode === 'labor_only'
                           ? comp.laborCost
-                          : comp.totalCost
+                          : comp.totalClientCost
                       )}
                     </div>
 

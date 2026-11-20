@@ -32,7 +32,6 @@ import {
   applyParametricEstimateToPci,
   calcProjectSummary,
   formatBRL,
-  formatNum,
   generateAutoSchedule,
 } from './utils/calculations';
 import { EasyQuoteView } from './components/EasyQuoteView';
@@ -132,6 +131,7 @@ export default function App() {
       emailProp: '',
       telefoneProp: '',
       endereco: '',
+      rteNome: '',
       areaConstruidaTotal: 85,
       valorTerreno: 100000,
       justificativasPci: '',
@@ -163,35 +163,6 @@ export default function App() {
     }));
   };
 
-  const handleUpdateProjectInfo = (
-    id: string,
-    patch: { nomeObra?: string; proponente?: string; areaConstruidaTotal?: number }
-  ) => {
-    setStore((prev) => ({
-      ...prev,
-      projects: prev.projects.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              nomeObra: patch.nomeObra !== undefined ? patch.nomeObra : p.nomeObra,
-              updatedAt: new Date().toISOString().slice(0, 10),
-              metadata: {
-                ...p.metadata,
-                proponente:
-                  patch.proponente !== undefined
-                    ? patch.proponente
-                    : p.metadata.proponente,
-                areaConstruidaTotal:
-                  patch.areaConstruidaTotal !== undefined
-                    ? patch.areaConstruidaTotal
-                    : p.metadata.areaConstruidaTotal,
-              },
-            }
-          : p
-      ),
-    }));
-  };
-
   const handleDeleteProject = (id: string) => {
     setConfirmDeleteSidebar(false);
     setStore((prev) => {
@@ -210,26 +181,21 @@ export default function App() {
     });
   };
 
-  const navItems: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  const mainNavItems: { id: TabId; label: string; icon: React.ReactNode }[] = [
     {
       id: 'quote',
-      label: 'Orçamento Fácil',
+      label: '1. Calcular Obra',
       icon: <Calculator className="h-4 w-4" />,
     },
     {
       id: 'labor',
-      label: 'Diárias e Preços',
+      label: '2. Diárias e Preços',
       icon: <HardHat className="h-4 w-4" />,
     },
     {
       id: 'report',
-      label: 'Resumo pro Cliente',
+      label: '3. Resumo pro Cliente',
       icon: <FileText className="h-4 w-4" />,
-    },
-    {
-      id: 'pci',
-      label: 'PCI CAIXA (Opcional)',
-      icon: <FileSpreadsheet className="h-4 w-4" />,
     },
   ];
 
@@ -246,7 +212,7 @@ export default function App() {
   const sidebarTotal =
     quoteMode === 'labor_only'
       ? summary.totalAutoLabor
-      : summary.totalAutoLabor + summary.totalAutoMaterial;
+      : summary.totalAutoLabor + summary.totalAutoMaterialWithMargin;
 
   const sidebarContent = (
     <div className="flex h-full flex-col justify-between bg-white">
@@ -313,7 +279,7 @@ export default function App() {
           </div>
           {confirmDeleteSidebar && (
             <div className="mt-2 flex items-center justify-between gap-2 rounded border border-red-200 bg-red-50 px-2.5 py-2 text-xs">
-              <span className="font-medium text-red-800">Excluir orçamento?</span>
+              <span className="font-medium text-red-800">Excluir?</span>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -334,9 +300,9 @@ export default function App() {
           )}
         </div>
 
-        {/* Navegação de 4 passos */}
+        {/* Navegação principal em 3 passos */}
         <nav className="space-y-1 p-3" aria-label="Menu principal">
-          {navItems.map((item) => {
+          {mainNavItems.map((item) => {
             const active = activeTab === item.id;
             return (
               <button
@@ -357,6 +323,24 @@ export default function App() {
               </button>
             );
           })}
+
+          <div className="my-2 border-t border-slate-200 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('pci');
+                setMobileMenuOpen(false);
+              }}
+              className={`flex min-h-[40px] w-full items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-left text-xs font-medium transition-colors ${
+                activeTab === 'pci'
+                  ? 'bg-blue-700 text-white'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+              }`}
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              <span>Planilha CAIXA (PCI)</span>
+            </button>
+          </div>
         </nav>
       </div>
 
@@ -369,13 +353,6 @@ export default function App() {
         </p>
         <p className="mt-1 font-mono text-lg font-bold tabular-nums text-slate-900">
           {formatBRL(sidebarTotal)}
-        </p>
-        <p className="mt-1 text-[11px] text-slate-500">
-          Prazo:{' '}
-          <span className="font-mono font-medium tabular-nums">
-            {formatNum(summary.totalMasonDays, 1)} dias
-          </span>{' '}
-          · Diária {formatBRL(activeProject.laborConfig.diariaPedreiro)}
         </p>
       </div>
     </div>
@@ -456,16 +433,16 @@ export default function App() {
           </div>
         </header>
 
-        {/* Navegação rápida no mobile */}
-        <div className="no-print flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-4 py-2 lg:hidden">
-          {navItems.map((item) => {
+        {/* Navegação rápida no mobile (apenas os 3 passos principais) */}
+        <div className="no-print grid grid-cols-3 gap-1 border-b border-slate-200 bg-white px-3 py-2 lg:hidden">
+          {mainNavItems.map((item) => {
             const active = activeTab === item.id;
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setActiveTab(item.id)}
-                className={`min-h-[38px] whitespace-nowrap shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${
+                className={`min-h-[38px] truncate rounded-md px-2 py-1.5 text-center text-xs font-semibold ${
                   active
                     ? 'bg-blue-700 text-white'
                     : 'bg-slate-100 text-slate-700'
@@ -505,21 +482,27 @@ export default function App() {
                   entries: p.entries.filter((e) => e.id !== id),
                 }))
               }
+              onClearEntries={() =>
+                updateActiveProject((p) => ({
+                  ...p,
+                  entries: [],
+                }))
+              }
+              onUpdateMaterialMargin={(pct: number) =>
+                updateActiveProject((p) => ({
+                  ...p,
+                  laborConfig: {
+                    ...p.laborConfig,
+                    materialMarginPercent: Math.max(pct, 0),
+                  },
+                }))
+              }
             />
           )}
 
           {activeTab === 'labor' && (
             <LaborMatrixView
               project={activeProject}
-              allProjects={store.projects}
-              summary={summary}
-              onSelectProject={(id: string) =>
-                setStore((prev) => ({ ...prev, activeId: id }))
-              }
-              onCreateProject={handleCreateBlankProject}
-              onDuplicateProject={handleDuplicateProject}
-              onUpdateProjectInfo={handleUpdateProjectInfo}
-              onDeleteProject={handleDeleteProject}
               onUpdateLaborConfig={(patch) =>
                 updateActiveProject((p) => ({
                   ...p,
@@ -595,6 +578,15 @@ export default function App() {
               summary={summary}
               quoteMode={quoteMode}
               onChangeQuoteMode={setQuoteMode}
+              onUpdateProjectTitle={(nomeObra: string) =>
+                updateActiveProject((p) => ({ ...p, nomeObra }))
+              }
+              onUpdateMetadata={(patch: Partial<ProjectMetadata>) =>
+                updateActiveProject((p) => ({
+                  ...p,
+                  metadata: { ...p.metadata, ...patch },
+                }))
+              }
               onImportProjectJson={handleImportJson}
             />
           )}

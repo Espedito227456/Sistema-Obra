@@ -347,6 +347,8 @@ export function calcEntryComputed(
     : 0;
   const laborCost = quantidadeLabor * custoComEncargosUnit;
   const materialCost = calcMaterialsCost(materials, prices);
+  const marginPct = Math.max(laborConfig.materialMarginPercent ?? 15, 0);
+  const materialClientCost = materialCost * (1 + marginPct / 100);
 
   return {
     entryId: entry.id,
@@ -357,7 +359,9 @@ export function calcEntryComputed(
     masonDays,
     helperDays,
     materialCost,
+    materialClientCost,
     totalCost: laborCost + materialCost,
+    totalClientCost: laborCost + materialClientCost,
     materials,
   };
 }
@@ -369,6 +373,9 @@ export interface ProjectSummary {
   totalHelperDays: number;
   totalAutoLabor: number;
   totalAutoMaterial: number;
+  materialMarginPercent: number;
+  totalAutoMaterialMargin: number;
+  totalAutoMaterialWithMargin: number;
   pciComputed: PciComputedItem[];
   custoDireto: number;
   valorBdi: number;
@@ -485,6 +492,14 @@ export function calcProjectSummary(project: ConstructionProject): ProjectSummary
   const custoTotalTerrenoEdificacao =
     custoTotalObra + Math.max(project.metadata.valorTerreno, 0);
 
+  const materialMarginPercent = Math.max(
+    project.laborConfig.materialMarginPercent ?? 15,
+    0
+  );
+  const totalAutoMaterialWithMargin =
+    totalAutoMaterial * (1 + materialMarginPercent / 100);
+  const totalAutoMaterialMargin = totalAutoMaterialWithMargin - totalAutoMaterial;
+
   return {
     entriesComputed,
     consolidatedMaterials,
@@ -492,6 +507,9 @@ export function calcProjectSummary(project: ConstructionProject): ProjectSummary
     totalHelperDays,
     totalAutoLabor,
     totalAutoMaterial,
+    materialMarginPercent,
+    totalAutoMaterialMargin,
+    totalAutoMaterialWithMargin,
     pciComputed,
     custoDireto,
     valorBdi,
