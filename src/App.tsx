@@ -66,12 +66,13 @@ function loadInitialState(): StoredState {
               : p.laborServices;
           const updatedServices = withBaldrame.map((s) =>
             s.id === 'chapisco' &&
-            s.produtividadeDia === 17.5 &&
-            s.coefServente === 0.5
+            !s.precoFixoUnit &&
+            ((s.produtividadeDia === 17.5 && s.coefServente === 0.5) ||
+              (s.produtividadeDia === 100 && s.coefServente === 1.0))
               ? {
                   ...s,
                   nome: 'Chapisco em parede',
-                  produtividadeDia: 100,
+                  produtividadeDia: 150,
                   coefServente: 1.0,
                 }
               : s
@@ -491,10 +492,16 @@ export default function App() {
               summary={summary}
               quoteMode={quoteMode}
               onChangeQuoteMode={setQuoteMode}
-              onAddEntry={(entry: ServiceEntry) =>
+              onAddEntries={(newEntries: ServiceEntry[]) =>
                 updateActiveProject((p) => ({
                   ...p,
-                  entries: [entry, ...p.entries],
+                  entries: [...newEntries, ...p.entries],
+                }))
+              }
+              onReplaceEntries={(newEntries: ServiceEntry[]) =>
+                updateActiveProject((p) => ({
+                  ...p,
+                  entries: [...newEntries],
                 }))
               }
               onUpdateEntry={(id: string, patch: Partial<ServiceEntry>) =>

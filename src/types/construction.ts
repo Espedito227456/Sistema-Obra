@@ -21,6 +21,7 @@ export interface LaborServiceRate {
   coefServente: number; // fração de diária de servente por diária de pedreiro (ex: 1.0 = 1 servente por pedreiro)
   pciItemId: number;
   corePlanilha: boolean; // true se faz parte dos 9 serviços originais da Planilha Mão de Obra
+  precoFixoUnit?: number; // valor fixo opcional por unidade (empreita), mantendo produtividadeDia para prazo
 }
 
 export interface MaterialUnitPrices {

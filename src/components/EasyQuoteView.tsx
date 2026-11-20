@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Check,
-  ChevronDown,
   ChevronUp,
   Pencil,
   Plus,
@@ -11,13 +10,16 @@ import {
 import {
   CalculatorType,
   ConstructionProject,
+  MaterialsBreakdown,
   ServiceEntry,
 } from '../types/construction';
 import { TRACOS_ARGAMASSA, TRACOS_CONCRETO } from '../data/presets';
 import {
   calcEntryComputed,
+  calcLaborUnitCost,
   formatBRL,
   formatNum,
+  getMinTeamDailyCost,
   ProjectSummary,
 } from '../utils/calculations';
 
@@ -26,7 +28,8 @@ interface Props {
   summary: ProjectSummary;
   quoteMode: 'labor_only' | 'full';
   onChangeQuoteMode: (mode: 'labor_only' | 'full') => void;
-  onAddEntry: (entry: ServiceEntry) => void;
+  onAddEntries: (entries: ServiceEntry[]) => void;
+  onReplaceEntries: (entries: ServiceEntry[]) => void;
   onUpdateEntry: (id: string, patch: Partial<ServiceEntry>) => void;
   onDeleteEntry: (id: string) => void;
   onClearEntries: () => void;
@@ -34,14 +37,14 @@ interface Props {
 }
 
 interface SimpleServiceOption {
-  type: CalculatorType;
+  key: string;
   titulo: string;
   template: Omit<ServiceEntry, 'id'>;
 }
 
 const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   {
-    type: 'baldrame_direto',
+    key: 'baldrame',
     titulo: 'Fundação / Baldrame',
     template: {
       descricao: 'Baldrame direto no chão (15x30cm)',
@@ -66,7 +69,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'alvenaria_furado',
+    key: 'alvenaria_furado',
     titulo: 'Parede (Tijolo)',
     template: {
       descricao: 'Parede de alvenaria (tijolo furado)',
@@ -91,7 +94,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'chapisco',
+    key: 'chapisco',
     titulo: 'Chapisco',
     template: {
       descricao: 'Chapisco em parede',
@@ -116,7 +119,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'emboco',
+    key: 'emboco',
     titulo: 'Reboco / Emboço',
     template: {
       descricao: 'Reboco / emboço em paredes',
@@ -141,7 +144,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'contrapiso',
+    key: 'contrapiso',
     titulo: 'Contrapiso',
     template: {
       descricao: 'Contrapiso de cimento e areia',
@@ -166,7 +169,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'ceramica',
+    key: 'ceramica',
     titulo: 'Piso / Cerâmica',
     template: {
       descricao: 'Assentamento de piso / cerâmica',
@@ -191,7 +194,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'piso_concreto',
+    key: 'piso_concreto',
     titulo: 'Piso Concreto',
     template: {
       descricao: 'Piso de concreto / calçada',
@@ -216,7 +219,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'pilar_embutido',
+    key: 'pilares',
     titulo: 'Pilares',
     template: {
       descricao: 'Pilares em concreto (14x25cm)',
@@ -241,7 +244,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'vigas',
+    key: 'vigas',
     titulo: 'Vigas / Cintas',
     template: {
       descricao: 'Vigas e cintas de amarração',
@@ -266,7 +269,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'laje',
+    key: 'laje',
     titulo: 'Laje',
     template: {
       descricao: 'Concretagem de laje',
@@ -291,7 +294,7 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
     },
   },
   {
-    type: 'alvenaria_macico',
+    key: 'alvenaria_macico',
     titulo: 'Tijolo Maciço',
     template: {
       descricao: 'Parede de tijolo maciço',
@@ -317,95 +320,184 @@ const SIMPLE_OPTIONS: SimpleServiceOption[] = [
   },
 ];
 
+const INITIAL_SELECTED_KEYS = [
+  'baldrame',
+  'alvenaria_furado',
+  'chapisco',
+  'emboco',
+  'contrapiso',
+];
+
+function createInitialDrafts(): Record<string, Omit<ServiceEntry, 'id'>> {
+  const map: Record<string, Omit<ServiceEntry, 'id'>> = {};
+  for (const opt of SIMPLE_OPTIONS) {
+    map[opt.key] = { ...opt.template };
+  }
+  return map;
+}
+
+const EMPTY_MATS: MaterialsBreakdown = {
+  cimentoSacos50kg: 0,
+  calSacos20kg: 0,
+  areiaM3: 0,
+  areiaSacos20kg: 0,
+  britaM3: 0,
+  britaSacos20kg: 0,
+  tijolosFuradoUnid: 0,
+  tijolosMacicoUnid: 0,
+  argamassaSacos20kg: 0,
+  rejunteKg: 0,
+};
+
 export const EasyQuoteView: React.FC<Props> = ({
   project,
   summary,
   quoteMode,
   onChangeQuoteMode,
-  onAddEntry,
+  onAddEntries,
+  onReplaceEntries,
   onUpdateEntry,
   onDeleteEntry,
   onClearEntries,
   onUpdateMaterialMargin,
 }) => {
-  const [selectedType, setSelectedType] =
-    useState<CalculatorType>('alvenaria_furado');
-  const [draft, setDraft] = useState<Omit<ServiceEntry, 'id'>>(
-    SIMPLE_OPTIONS[0].template
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(
+    INITIAL_SELECTED_KEYS
   );
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, Omit<ServiceEntry, 'id'>>>(
+    createInitialDrafts
+  );
+  const [expandedOptionKey, setExpandedOptionKey] = useState<string | null>(
+    null
+  );
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
 
-  const handleSelectOption = (opt: SimpleServiceOption) => {
-    setEditingEntryId(null);
-    setSelectedType(opt.type);
-    setDraft({ ...opt.template });
-  };
-
-  const handleStartEdit = (entry: ServiceEntry) => {
-    const { id, ...rest } = entry;
-    setEditingEntryId(id);
-    setConfirmDeleteId(null);
-    setSelectedType(entry.calculatorType);
-    setDraft({ ...rest });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleSaveDraft = () => {
-    if (editingEntryId) {
-      onUpdateEntry(editingEntryId, { ...draft });
-      setEditingEntryId(null);
-      return;
-    }
-    onAddEntry({ ...draft, id: `srv-${Date.now()}` });
-  };
-
-  const draftPreview = useMemo(() => {
-    const tempEntry: ServiceEntry = { id: 'preview', ...draft };
-    return calcEntryComputed(
-      tempEntry,
-      project.laborConfig,
-      project.laborServices,
-      project.materialPrices
+  const toggleSelectKey = (key: string) => {
+    setSelectedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
+  };
+
+  const applyQuickPack = (keys: string[]) => {
+    setSelectedKeys(keys);
+  };
+
+  const updateDraftField = (
+    key: string,
+    patch: Partial<Omit<ServiceEntry, 'id'>>
+  ) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [key]: { ...prev[key], ...patch },
+    }));
+  };
+
+  const computedOptions = useMemo(() => {
+    const out: Record<
+      string,
+      ReturnType<typeof calcEntryComputed>
+    > = {};
+    for (const opt of SIMPLE_OPTIONS) {
+      const draft = drafts[opt.key];
+      out[opt.key] = calcEntryComputed(
+        { id: `preview-${opt.key}`, ...draft },
+        project.laborConfig,
+        project.laborServices,
+        project.materialPrices
+      );
+    }
+    return out;
   }, [
-    draft,
+    drafts,
     project.laborConfig,
     project.laborServices,
     project.materialPrices,
   ]);
 
-  const isBaldrame =
-    selectedType === 'baldrame_direto' || selectedType === 'baldrame_caixaria';
-  const isPillar =
-    selectedType === 'pilar_embutido' || selectedType === 'pilar_isolado';
-  const isViga = selectedType === 'vigas';
-  const isConcrete =
-    isBaldrame ||
-    isPillar ||
-    isViga ||
-    selectedType === 'piso_concreto' ||
-    selectedType === 'laje';
-  const usesCal =
-    selectedType === 'alvenaria_furado' ||
-    selectedType === 'alvenaria_macico' ||
-    selectedType === 'emboco';
+  const minDailyLabor = getMinTeamDailyCost(project.laborConfig);
+
+  const selectionSummary = useMemo(() => {
+    let laborRaw = 0;
+    let materialRaw = 0;
+    let materialClient = 0;
+    let masonDays = 0;
+    const mats: MaterialsBreakdown = { ...EMPTY_MATS };
+
+    for (const opt of SIMPLE_OPTIONS) {
+      if (!selectedKeys.includes(opt.key)) continue;
+      const comp = computedOptions[opt.key];
+      if (!comp) continue;
+      laborRaw += comp.laborCost;
+      materialRaw += comp.materialCost;
+      materialClient += comp.materialClientCost;
+      masonDays += comp.masonDays;
+      mats.cimentoSacos50kg += comp.materials.cimentoSacos50kg;
+      mats.calSacos20kg += comp.materials.calSacos20kg;
+      mats.areiaM3 += comp.materials.areiaM3;
+      mats.britaM3 += comp.materials.britaM3;
+      mats.tijolosFuradoUnid += comp.materials.tijolosFuradoUnid;
+      mats.tijolosMacicoUnid += comp.materials.tijolosMacicoUnid;
+      mats.argamassaSacos20kg += comp.materials.argamassaSacos20kg;
+      mats.rejunteKg += comp.materials.rejunteKg;
+    }
+
+    const minApplied =
+      selectedKeys.length > 0 && laborRaw > 0 && laborRaw < minDailyLabor;
+    const laborFinal = minApplied ? minDailyLabor : laborRaw;
+    const daysFinal = minApplied ? Math.max(masonDays, 1) : masonDays;
+    const totalFinal =
+      quoteMode === 'labor_only' ? laborFinal : laborFinal + materialClient;
+
+    return {
+      count: selectedKeys.length,
+      laborRaw,
+      laborFinal,
+      minApplied,
+      materialRaw,
+      materialClient,
+      totalFinal,
+      daysFinal,
+      mats,
+    };
+  }, [selectedKeys, computedOptions, minDailyLabor, quoteMode]);
+
+  const buildSelectedEntries = (): ServiceEntry[] => {
+    const baseTime = Date.now();
+    return SIMPLE_OPTIONS.filter((opt) => selectedKeys.includes(opt.key)).map(
+      (opt, idx) => ({
+        ...drafts[opt.key],
+        id: `srv-${baseTime}-${idx}`,
+      })
+    );
+  };
+
+  const handleAddSelectedToBudget = () => {
+    const entries = buildSelectedEntries();
+    if (entries.length === 0) return;
+    onAddEntries(entries);
+  };
+
+  const handleReplaceWithSelected = () => {
+    const entries = buildSelectedEntries();
+    if (entries.length === 0) return;
+    onReplaceEntries(entries);
+  };
 
   const displayedTotal =
     quoteMode === 'labor_only'
       ? summary.totalAutoLabor
       : summary.totalAutoLabor + summary.totalAutoMaterialWithMargin;
 
-  const numInput = (
+  const compactNumInput = (
     label: string,
     value: number,
     onChange: (v: number) => void,
     step = '1'
   ) => (
     <div>
-      <label className="mb-1.5 block text-xs font-medium text-slate-700">
+      <label className="mb-1 block text-[11px] font-medium text-slate-600">
         {label}
       </label>
       <input
@@ -417,29 +509,261 @@ export const EasyQuoteView: React.FC<Props> = ({
           const parsed = parseFloat(e.target.value);
           onChange(Number.isFinite(parsed) ? Math.max(parsed, 0) : 0);
         }}
-        className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-right font-mono text-base font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+        className="min-h-[40px] w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-right font-mono text-sm font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
       />
     </div>
   );
 
+  const renderAdvancedFields = (
+    draft: Omit<ServiceEntry, 'id'>,
+    onChangeDraft: (patch: Partial<Omit<ServiceEntry, 'id'>>) => void
+  ) => {
+    const cType = draft.calculatorType;
+    const isBaldrame =
+      cType === 'baldrame_direto' || cType === 'baldrame_caixaria';
+    const isPillar = cType === 'pilar_embutido' || cType === 'pilar_isolado';
+    const isViga = cType === 'vigas';
+    const isConcrete =
+      isBaldrame ||
+      isPillar ||
+      isViga ||
+      cType === 'piso_concreto' ||
+      cType === 'laje';
+    const usesCal =
+      cType === 'alvenaria_furado' ||
+      cType === 'alvenaria_macico' ||
+      cType === 'emboco';
+
+    return (
+      <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-slate-600">
+              Nome do Serviço no Orçamento
+            </label>
+            <input
+              type="text"
+              value={draft.descricao}
+              onChange={(e) => onChangeDraft({ descricao: e.target.value })}
+              className="min-h-[40px] w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-slate-600">
+              Tabela de Mão de Obra
+            </label>
+            <select
+              value={draft.laborServiceId}
+              onChange={(e) =>
+                onChangeDraft({ laborServiceId: e.target.value })
+              }
+              className="min-h-[40px] w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
+            >
+              {project.laborServices.map((ls) => (
+                <option key={ls.id} value={ls.id}>
+                  {ls.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {quoteMode === 'full' && cType !== 'ceramica' && (
+          <div>
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-slate-600">
+                Traço da Mistura
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {(isConcrete
+                  ? TRACOS_CONCRETO.slice(0, 3)
+                  : TRACOS_ARGAMASSA.slice(0, 3)
+                ).map((t, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() =>
+                      onChangeDraft({
+                        propCimento: t.cimento,
+                        propCal: 'cal' in t ? t.cal : 0,
+                        propAreia: t.areia,
+                        propBrita: 'brita' in t ? t.brita : 0,
+                      })
+                    }
+                    className="rounded border border-slate-300 bg-white px-2 py-0.5 font-mono text-[11px] text-blue-700 hover:bg-blue-50"
+                  >
+                    {t.cimento}:{'cal' in t && t.cal > 0 ? `${t.cal}:` : ''}
+                    {t.areia}
+                    {'brita' in t && t.brita > 0 ? `:${t.brita}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              {compactNumInput(
+                'Cimento',
+                draft.propCimento,
+                (v) => onChangeDraft({ propCimento: v }),
+                '0.5'
+              )}
+              {usesCal &&
+                compactNumInput(
+                  'Cal',
+                  draft.propCal,
+                  (v) => onChangeDraft({ propCal: v }),
+                  '0.5'
+                )}
+              {compactNumInput(
+                'Areia',
+                draft.propAreia,
+                (v) => onChangeDraft({ propAreia: v }),
+                '0.5'
+              )}
+              {isConcrete &&
+                compactNumInput(
+                  'Brita',
+                  draft.propBrita,
+                  (v) => onChangeDraft({ propBrita: v }),
+                  '0.5'
+                )}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          {(cType === 'alvenaria_furado' || cType === 'alvenaria_macico') && (
+            <>
+              {compactNumInput(
+                'Larg. Tijolo (cm)',
+                draft.larguraCm,
+                (v) => onChangeDraft({ larguraCm: v }),
+                '0.5'
+              )}
+              {compactNumInput(
+                'Alt. Tijolo (cm)',
+                draft.alturaCm,
+                (v) => onChangeDraft({ alturaCm: v }),
+                '0.5'
+              )}
+              {compactNumInput(
+                'Junta (cm)',
+                draft.juntaCm,
+                (v) => onChangeDraft({ juntaCm: v }),
+                '0.1'
+              )}
+            </>
+          )}
+
+          {(cType === 'emboco' ||
+            cType === 'contrapiso' ||
+            cType === 'piso_concreto' ||
+            cType === 'laje') &&
+            compactNumInput(
+              'Espessura (cm)',
+              draft.espessuraCm,
+              (v) => onChangeDraft({ espessuraCm: v }),
+              '0.5'
+            )}
+
+          {cType === 'chapisco' &&
+            compactNumInput(
+              'Espessura (mm)',
+              draft.espessuraMm,
+              (v) => onChangeDraft({ espessuraMm: v }),
+              '0.5'
+            )}
+
+          {cType === 'ceramica' && (
+            <>
+              {compactNumInput(
+                'Peça Compr. (cm)',
+                draft.comprimentoCm,
+                (v) => onChangeDraft({ comprimentoCm: v })
+              )}
+              {compactNumInput(
+                'Peça Larg. (cm)',
+                draft.larguraCm,
+                (v) => onChangeDraft({ larguraCm: v })
+              )}
+              {compactNumInput(
+                'Junta (mm)',
+                draft.juntaMm,
+                (v) => onChangeDraft({ juntaMm: v }),
+                '0.5'
+              )}
+            </>
+          )}
+
+          {(isViga || isBaldrame) && (
+            <>
+              {compactNumInput(
+                'Largura (cm)',
+                draft.larguraCm,
+                (v) => onChangeDraft({ larguraCm: v })
+              )}
+              {compactNumInput(
+                'Altura (cm)',
+                draft.alturaCm,
+                (v) => onChangeDraft({ alturaCm: v })
+              )}
+            </>
+          )}
+
+          {isPillar && (
+            <>
+              {compactNumInput(
+                'Larg. Pilar (cm)',
+                draft.larguraCm,
+                (v) => onChangeDraft({ larguraCm: v })
+              )}
+              {compactNumInput(
+                'Compr. Pilar (cm)',
+                draft.comprimentoCm,
+                (v) => onChangeDraft({ comprimentoCm: v })
+              )}
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                  Tipo de Pilar
+                </label>
+                <select
+                  value={draft.calculatorType}
+                  onChange={(e) =>
+                    onChangeDraft({
+                      calculatorType: e.target.value as CalculatorType,
+                    })
+                  }
+                  className="min-h-[40px] w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-900"
+                >
+                  <option value="pilar_embutido">Embutido (+20%)</option>
+                  <option value="pilar_isolado">Isolado</option>
+                </select>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
-      {/* Resumo Direto + Seletor Só Mão de Obra vs Completo */}
+      {/* Total Atual do Orçamento + Modo */}
       <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs font-medium text-slate-500">
               {quoteMode === 'labor_only'
-                ? 'Total Só Mão de Obra'
-                : 'Total Mão de Obra + Materiais'}
+                ? 'Total do Orçamento (Só Mão de Obra)'
+                : 'Total do Orçamento (Mão de Obra + Materiais)'}
             </p>
             <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-slate-900">
               {formatBRL(displayedTotal)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
               {project.entries.length}{' '}
-              {project.entries.length === 1 ? 'serviço' : 'serviços'} · Prazo
-              estimado:{' '}
+              {project.entries.length === 1 ? 'serviço' : 'serviços'} somados
+              · Prazo estimado:{' '}
               <span className="font-mono font-medium tabular-nums text-slate-700">
                 ~{Math.ceil(summary.totalMasonDays)} dias
               </span>
@@ -450,7 +774,7 @@ export const EasyQuoteView: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => onChangeQuoteMode('labor_only')}
-              className={`min-h-[40px] whitespace-nowrap rounded-md px-3.5 py-2 text-xs font-semibold transition-colors ${
+              className={`min-h-[40px] whitespace-nowrap shrink-0 rounded-md px-3.5 py-2 text-xs font-semibold transition-colors ${
                 quoteMode === 'labor_only'
                   ? 'bg-white text-blue-700 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -461,7 +785,7 @@ export const EasyQuoteView: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => onChangeQuoteMode('full')}
-              className={`min-h-[40px] whitespace-nowrap rounded-md px-3.5 py-2 text-xs font-semibold transition-colors ${
+              className={`min-h-[40px] whitespace-nowrap shrink-0 rounded-md px-3.5 py-2 text-xs font-semibold transition-colors ${
                 quoteMode === 'full'
                   ? 'bg-white text-blue-700 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -471,6 +795,20 @@ export const EasyQuoteView: React.FC<Props> = ({
             </button>
           </div>
         </div>
+
+        {summary.minDailyApplied && (
+          <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+            Mínimo de 1 diária da equipe (
+            <span className="font-mono font-semibold tabular-nums">
+              {formatBRL(summary.minDailyLabor)}
+            </span>
+            ) aplicado ao orçamento (pelo m² daria{' '}
+            <span className="font-mono tabular-nums">
+              {formatBRL(summary.totalAutoLaborRaw)}
+            </span>
+            ) para evitar prejuízo com pedreiro e servente.
+          </div>
+        )}
 
         {quoteMode === 'full' && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-xs">
@@ -524,538 +862,375 @@ export const EasyQuoteView: React.FC<Props> = ({
         )}
       </section>
 
-      {/* Passo 1: Escolher o Serviço e Digitar a Medida */}
+      {/* Passo 1: Seleção Múltipla de Serviços + Soma em Tempo Real */}
       <section className="rounded-lg border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-5 py-3.5 sm:px-6">
-          <h2 className="text-base font-semibold text-slate-900">
-            {editingEntryId
-              ? 'Editando Serviço'
-              : '1. Escolha o serviço e digite o tamanho'}
-          </h2>
-        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">
+              1. Marque os serviços que vai fazer e digite as medidas
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Você pode marcar vários serviços juntos (baldrame, parede,
+              chapisco, reboco, contrapiso...) para somar tudo de uma vez.
+            </p>
+          </div>
 
-        {/* Grade de botões diretos */}
-        <div className="border-b border-slate-200 bg-slate-50/70 p-4 sm:px-6">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {SIMPLE_OPTIONS.map((opt) => {
-              const active =
-                selectedType === opt.type ||
-                (opt.type === 'baldrame_direto' && isBaldrame) ||
-                (opt.type === 'pilar_embutido' &&
-                  selectedType === 'pilar_isolado');
-              return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => applyQuickPack(INITIAL_SELECTED_KEYS)}
+              className="min-h-[36px] whitespace-nowrap shrink-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Obra Básica (5)
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                applyQuickPack(['chapisco', 'emboco', 'contrapiso', 'ceramica'])
+              }
+              className="min-h-[36px] whitespace-nowrap shrink-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Acabamento (4)
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                applyQuickPack(
+                  selectedKeys.length === SIMPLE_OPTIONS.length
+                    ? []
+                    : SIMPLE_OPTIONS.map((o) => o.key)
+                )
+              }
+              className="min-h-[36px] whitespace-nowrap shrink-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              {selectedKeys.length === SIMPLE_OPTIONS.length
+                ? 'Desmarcar Todos'
+                : 'Marcar Todos'}
+            </button>
+            {selectedKeys.length > 0 &&
+              selectedKeys.length < SIMPLE_OPTIONS.length && (
                 <button
-                  key={opt.type}
                   type="button"
-                  onClick={() => handleSelectOption(opt)}
-                  className={`min-h-[44px] rounded-lg border px-3 py-2 text-center text-xs font-semibold transition-colors ${
-                    active
-                      ? 'border-blue-700 bg-blue-700 text-white'
-                      : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
+                  onClick={() => applyQuickPack([])}
+                  className="min-h-[36px] whitespace-nowrap shrink-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50"
                 >
-                  {opt.titulo}
+                  Limpar
                 </button>
-              );
-            })}
+              )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 divide-y divide-slate-200 lg:grid-cols-12 lg:divide-x lg:divide-y-0">
-          {/* Apenas o essencial por padrão */}
-          <div className="space-y-4 p-5 sm:p-6 lg:col-span-7">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-12">
-              <div className="sm:col-span-7">
-                <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                  Nome do Serviço / Local
-                </label>
-                <input
-                  type="text"
-                  value={draft.descricao}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, descricao: e.target.value }))
-                  }
-                  placeholder="Ex.: Paredes da sala"
-                  className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
-                />
-              </div>
+        {/* Lista de Serviços Marcáveis */}
+        <div className="divide-y divide-slate-100">
+          {SIMPLE_OPTIONS.map((opt) => {
+            const checked = selectedKeys.includes(opt.key);
+            const draft = drafts[opt.key];
+            const comp = computedOptions[opt.key];
+            const isExpanded = expandedOptionKey === opt.key;
+            const isBaldrame = opt.key === 'baldrame';
+            const isPillar = opt.key === 'pilares';
+            const isLinear = opt.key === 'baldrame' || opt.key === 'vigas';
 
-              <div className="sm:col-span-5">
-                {isPillar ? (
-                  numInput(
-                    'Qtd. de Pilares (un)',
-                    draft.quantidadeUnid,
-                    (v) => setDraft((d) => ({ ...d, quantidadeUnid: v }))
-                  )
-                ) : isViga || isBaldrame ? (
-                  numInput(
-                    'Comprimento Total (m)',
-                    draft.comprimentoM,
-                    (v) => setDraft((d) => ({ ...d, comprimentoM: v }))
-                  )
-                ) : (
-                  numInput(
-                    'Área / Tamanho (m²)',
-                    draft.areaM2,
-                    (v) => setDraft((d) => ({ ...d, areaM2: v }))
-                  )
-                )}
-              </div>
-            </div>
+            const activeService =
+              project.laborServices.find(
+                (s) => s.id === draft.laborServiceId
+              ) ?? project.laborServices[0];
+            const unitRate = activeService
+              ? calcLaborUnitCost(activeService, project.laborConfig)
+                  .custoComEncargosUnit
+              : 0;
 
-            {isBaldrame && (
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                  Como será feito o baldrame?
-                </label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedType('baldrame_direto');
-                      setDraft((d) => ({
-                        ...d,
-                        calculatorType: 'baldrame_direto',
-                        laborServiceId: 'baldrame_direto',
-                        descricao: d.descricao.startsWith('Baldrame')
-                          ? 'Baldrame direto no chão (15x30cm)'
-                          : d.descricao,
-                      }));
-                    }}
-                    className={`min-h-[44px] rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
-                      selectedType === 'baldrame_direto'
-                        ? 'border-blue-700 bg-blue-50 text-blue-900'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="font-semibold">
-                      Direto no chão (sem caixaria)
-                    </div>
-                    <div className="mt-0.5 text-[11px] opacity-80">
-                      Cavado direto na vala · Ref. R$ 40–80/m
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedType('baldrame_caixaria');
-                      setDraft((d) => ({
-                        ...d,
-                        calculatorType: 'baldrame_caixaria',
-                        laborServiceId: 'baldrame_caixaria',
-                        descricao: d.descricao.startsWith('Baldrame')
-                          ? 'Baldrame com caixaria (15x30cm)'
-                          : d.descricao,
-                      }));
-                    }}
-                    className={`min-h-[44px] rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
-                      selectedType === 'baldrame_caixaria'
-                        ? 'border-blue-700 bg-blue-50 text-blue-900'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="font-semibold">
-                      Com caixaria (fôrma de madeira)
-                    </div>
-                    <div className="mt-0.5 text-[11px] opacity-80">
-                      Com tábuas laterais e desforma · Ref. R$ 80–150/m
-                    </div>
-                  </button>
-                </div>
-              </div>
-            )}
+            const rowValue =
+              quoteMode === 'labor_only'
+                ? comp.laborCost
+                : comp.totalClientCost;
 
-            {isPillar && (
-              <div className="sm:w-1/2">
-                {numInput(
-                  'Altura de cada Pilar (m)',
-                  draft.alturaM,
-                  (v) => setDraft((d) => ({ ...d, alturaM: v })),
-                  '0.1'
-                )}
-              </div>
-            )}
-
-            {/* Ajustes opcionais recolhidos por padrão */}
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => setShowAdvanced((v) => !v)}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-blue-700"
+            return (
+              <div
+                key={opt.key}
+                className={`px-5 py-3.5 transition-colors sm:px-6 ${
+                  checked ? 'bg-blue-50/35' : 'hover:bg-slate-50/70'
+                }`}
               >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                {showAdvanced
-                  ? 'Ocultar opções avançadas'
-                  : 'Mudar tipo, traço ou espessura (opcional)'}
-                {showAdvanced ? (
-                  <ChevronUp className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                )}
-              </button>
-
-              {showAdvanced && (
-                <div className="mt-3 space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                      Tabela de Preço da Mão de Obra
-                    </label>
-                    <select
-                      value={draft.laborServiceId}
-                      onChange={(e) =>
-                        setDraft((d) => ({
-                          ...d,
-                          laborServiceId: e.target.value,
-                        }))
-                      }
-                      className="min-h-[42px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {/* Checkbox + Título */}
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectKey(opt.key)}
+                    className="flex min-h-[40px] min-w-[190px] flex-1 items-center gap-3 text-left"
+                  >
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
+                        checked
+                          ? 'border-blue-700 bg-blue-700 text-white'
+                          : 'border-slate-300 bg-white text-transparent'
+                      }`}
                     >
-                      {project.laborServices.map((ls) => (
-                        <option key={ls.id} value={ls.id}>
-                          {ls.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {quoteMode === 'full' && selectedType !== 'ceramica' && (
+                      <Check className="h-3.5 w-3.5" />
+                    </span>
                     <div>
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-slate-700">
-                          Traço da Mistura
-                        </span>
-                        <div className="flex flex-wrap gap-1">
-                          {(isConcrete
-                            ? TRACOS_CONCRETO.slice(0, 3)
-                            : TRACOS_ARGAMASSA.slice(0, 3)
-                          ).map((t, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() =>
-                                setDraft((d) => ({
-                                  ...d,
-                                  propCimento: t.cimento,
-                                  propCal: 'cal' in t ? t.cal : 0,
-                                  propAreia: t.areia,
-                                  propBrita: 'brita' in t ? t.brita : 0,
-                                }))
-                              }
-                              className="rounded border border-slate-300 bg-white px-2 py-1 font-mono text-[11px] text-blue-700 hover:bg-blue-50"
-                            >
-                              {t.cimento}:
-                              {'cal' in t && t.cal > 0 ? `${t.cal}:` : ''}
-                              {t.areia}
-                              {'brita' in t && t.brita > 0 ? `:${t.brita}` : ''}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        {numInput(
-                          'Cimento',
-                          draft.propCimento,
-                          (v) => setDraft((d) => ({ ...d, propCimento: v })),
-                          '0.5'
-                        )}
-                        {usesCal &&
-                          numInput(
-                            'Cal',
-                            draft.propCal,
-                            (v) => setDraft((d) => ({ ...d, propCal: v })),
-                            '0.5'
-                          )}
-                        {numInput(
-                          'Areia',
-                          draft.propAreia,
-                          (v) => setDraft((d) => ({ ...d, propAreia: v })),
-                          '0.5'
-                        )}
-                        {isConcrete &&
-                          numInput(
-                            'Brita',
-                            draft.propBrita,
-                            (v) => setDraft((d) => ({ ...d, propBrita: v })),
-                            '0.5'
-                          )}
-                      </div>
+                      <span className="text-sm font-semibold text-slate-900">
+                        {opt.titulo}
+                      </span>
+                      <span className="ml-2 font-mono text-xs text-slate-500 tabular-nums">
+                        {formatBRL(unitRate)}/{comp.unidadeBase}
+                      </span>
                     </div>
-                  )}
+                  </button>
 
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {(selectedType === 'alvenaria_furado' ||
-                      selectedType === 'alvenaria_macico') && (
-                      <>
-                        {numInput(
-                          'Larg. Tijolo (cm)',
-                          draft.larguraCm,
-                          (v) => setDraft((d) => ({ ...d, larguraCm: v })),
-                          '0.5'
-                        )}
-                        {numInput(
-                          'Alt. Tijolo (cm)',
-                          draft.alturaCm,
-                          (v) => setDraft((d) => ({ ...d, alturaCm: v })),
-                          '0.5'
-                        )}
-                        {numInput(
-                          'Junta (cm)',
-                          draft.juntaCm,
-                          (v) => setDraft((d) => ({ ...d, juntaCm: v })),
-                          '0.1'
-                        )}
-                      </>
-                    )}
-
-                    {(selectedType === 'emboco' ||
-                      selectedType === 'contrapiso' ||
-                      selectedType === 'piso_concreto' ||
-                      selectedType === 'laje') &&
-                      numInput(
-                        'Espessura (cm)',
-                        draft.espessuraCm,
-                        (v) => setDraft((d) => ({ ...d, espessuraCm: v })),
-                        '0.5'
-                      )}
-
-                    {selectedType === 'chapisco' &&
-                      numInput(
-                        'Espessura (mm)',
-                        draft.espessuraMm,
-                        (v) => setDraft((d) => ({ ...d, espessuraMm: v })),
-                        '0.5'
-                      )}
-
-                    {selectedType === 'ceramica' && (
-                      <>
-                        {numInput(
-                          'Peça Compr. (cm)',
-                          draft.comprimentoCm,
-                          (v) => setDraft((d) => ({ ...d, comprimentoCm: v }))
-                        )}
-                        {numInput(
-                          'Peça Larg. (cm)',
-                          draft.larguraCm,
-                          (v) => setDraft((d) => ({ ...d, larguraCm: v }))
-                        )}
-                        {numInput(
-                          'Junta (mm)',
-                          draft.juntaMm,
-                          (v) => setDraft((d) => ({ ...d, juntaMm: v })),
-                          '0.5'
-                        )}
-                      </>
-                    )}
-
-                    {(isViga || isBaldrame) && (
-                      <>
-                        {numInput(
-                          'Largura (cm)',
-                          draft.larguraCm,
-                          (v) => setDraft((d) => ({ ...d, larguraCm: v }))
-                        )}
-                        {numInput(
-                          'Altura (cm)',
-                          draft.alturaCm,
-                          (v) => setDraft((d) => ({ ...d, alturaCm: v }))
-                        )}
-                      </>
-                    )}
-
-                    {isPillar && (
-                      <>
-                        {numInput(
-                          'Larg. Pilar (cm)',
-                          draft.larguraCm,
-                          (v) => setDraft((d) => ({ ...d, larguraCm: v }))
-                        )}
-                        {numInput(
-                          'Compr. Pilar (cm)',
-                          draft.comprimentoCm,
-                          (v) => setDraft((d) => ({ ...d, comprimentoCm: v }))
-                        )}
-                        <div>
-                          <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                            Tipo de Pilar
-                          </label>
-                          <select
-                            value={draft.calculatorType}
-                            onChange={(e) => {
-                              const nextType = e.target.value as CalculatorType;
-                              setSelectedType(nextType);
-                              setDraft((d) => ({
-                                ...d,
-                                calculatorType: nextType,
-                              }));
-                            }}
-                            className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-2.5 text-xs text-slate-900"
+                  {/* Campos de Medida e Subtotal quando marcado */}
+                  {checked ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      {isBaldrame && (
+                        <div className="flex items-center gap-1 rounded-md bg-slate-100 p-0.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateDraftField(opt.key, {
+                                calculatorType: 'baldrame_direto',
+                                laborServiceId: 'baldrame_direto',
+                                descricao: 'Baldrame direto no chão (15x30cm)',
+                              })
+                            }
+                            className={`min-h-[34px] whitespace-nowrap rounded px-2.5 py-1 text-[11px] font-semibold ${
+                              draft.calculatorType === 'baldrame_direto'
+                                ? 'bg-white text-blue-700 shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
                           >
-                            <option value="pilar_embutido">
-                              Embutido (+20%)
-                            </option>
-                            <option value="pilar_isolado">Isolado</option>
-                          </select>
+                            Direto no chão
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateDraftField(opt.key, {
+                                calculatorType: 'baldrame_caixaria',
+                                laborServiceId: 'baldrame_caixaria',
+                                descricao: 'Baldrame com caixaria (15x30cm)',
+                              })
+                            }
+                            className={`min-h-[34px] whitespace-nowrap rounded px-2.5 py-1 text-[11px] font-semibold ${
+                              draft.calculatorType === 'baldrame_caixaria'
+                                ? 'bg-white text-blue-700 shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Com caixaria
+                          </button>
                         </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+                      )}
 
-          {/* Resultado na Hora + Botão Principal */}
-          <div className="flex flex-col justify-between bg-slate-50/70 p-5 sm:p-6 lg:col-span-5">
-            <div className="space-y-4">
-              <div className="rounded-lg border border-slate-200 bg-white p-4">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-medium text-slate-500">
-                    Mão de Obra
-                  </span>
-                  <span className="font-mono text-xl font-bold tabular-nums text-blue-700">
-                    {formatBRL(draftPreview.laborCost)}
-                  </span>
+                      {isPillar ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              value={draft.quantidadeUnid}
+                              onChange={(e) =>
+                                updateDraftField(opt.key, {
+                                  quantidadeUnid: Math.max(
+                                    0,
+                                    parseFloat(e.target.value) || 0
+                                  ),
+                                })
+                              }
+                              aria-label="Quantidade de pilares"
+                              className="min-h-[38px] w-16 rounded-md border border-slate-300 bg-white px-2 py-1 text-right font-mono text-xs font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none"
+                            />
+                            <span className="text-xs text-slate-500">un</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={draft.alturaM}
+                              onChange={(e) =>
+                                updateDraftField(opt.key, {
+                                  alturaM: Math.max(
+                                    0,
+                                    parseFloat(e.target.value) || 0
+                                  ),
+                                })
+                              }
+                              aria-label="Altura de cada pilar"
+                              className="min-h-[38px] w-16 rounded-md border border-slate-300 bg-white px-2 py-1 text-right font-mono text-xs font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none"
+                            />
+                            <span className="text-xs text-slate-500">m alt</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            value={isLinear ? draft.comprimentoM : draft.areaM2}
+                            onChange={(e) => {
+                              const val = Math.max(
+                                0,
+                                parseFloat(e.target.value) || 0
+                              );
+                              if (isLinear) {
+                                updateDraftField(opt.key, {
+                                  comprimentoM: val,
+                                });
+                              } else {
+                                updateDraftField(opt.key, { areaM2: val });
+                              }
+                            }}
+                            aria-label={`Tamanho de ${opt.titulo}`}
+                            className="min-h-[38px] w-24 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-right font-mono text-sm font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                          />
+                          <span className="w-6 text-xs font-medium text-slate-500">
+                            {isLinear ? 'm' : 'm²'}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="min-w-[115px] text-right">
+                        <div className="font-mono text-sm font-bold tabular-nums text-blue-700">
+                          {formatBRL(rowValue)}
+                        </div>
+                        <div className="font-mono text-[11px] tabular-nums text-slate-500">
+                          ~{formatNum(comp.masonDays, 1)} dias
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedOptionKey(isExpanded ? null : opt.key)
+                        }
+                        className="inline-flex min-h-[36px] items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                      >
+                        <SlidersHorizontal className="h-3.5 w-3.5" />
+                        Ajustar
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400">
+                      Clique para incluir
+                    </span>
+                  )}
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  {formatBRL(draftPreview.laborUnitCost)}/
-                  {draftPreview.unidadeBase} · ~
-                  <span className="font-mono font-medium text-slate-700 tabular-nums">
-                    {formatNum(draftPreview.masonDays, 1)} dias
-                  </span>
-                </p>
+
+                {checked &&
+                  isExpanded &&
+                  renderAdvancedFields(draft, (patch) =>
+                    updateDraftField(opt.key, patch)
+                  )}
               </div>
+            );
+          })}
+        </div>
 
-              {quoteMode === 'full' && (
-                <div className="rounded-lg border border-slate-200 bg-white p-4">
-                  <div className="mb-2 flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-medium text-slate-500">
-                      Materiais (c/ {formatNum(summary.materialMarginPercent, 0)}% lucro)
-                    </span>
-                    <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
-                      {formatBRL(draftPreview.materialClientCost)}
-                    </span>
-                  </div>
-                  <div className="space-y-1 text-xs text-slate-700">
-                    {draftPreview.materials.cimentoSacos50kg > 0 && (
-                      <div className="flex justify-between">
-                        <span>Cimento (50 kg)</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatNum(
-                            Math.ceil(draftPreview.materials.cimentoSacos50kg),
-                            0
-                          )}{' '}
-                          sacos
-                        </span>
-                      </div>
-                    )}
-                    {draftPreview.materials.calSacos20kg > 0 && (
-                      <div className="flex justify-between">
-                        <span>Cal (20 kg)</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatNum(
-                            Math.ceil(draftPreview.materials.calSacos20kg),
-                            0
-                          )}{' '}
-                          sacos
-                        </span>
-                      </div>
-                    )}
-                    {draftPreview.materials.areiaM3 > 0 && (
-                      <div className="flex justify-between">
-                        <span>Areia</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatNum(draftPreview.materials.areiaM3, 2)} m³
-                        </span>
-                      </div>
-                    )}
-                    {draftPreview.materials.britaM3 > 0 && (
-                      <div className="flex justify-between">
-                        <span>Brita</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatNum(draftPreview.materials.britaM3, 2)} m³
-                        </span>
-                      </div>
-                    )}
-                    {draftPreview.materials.tijolosFuradoUnid > 0 && (
-                      <div className="flex justify-between">
-                        <span>Tijolo furado</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatNum(
-                            draftPreview.materials.tijolosFuradoUnid,
-                            0
-                          )}{' '}
-                          un
-                        </span>
-                      </div>
-                    )}
-                    {draftPreview.materials.tijolosMacicoUnid > 0 && (
-                      <div className="flex justify-between">
-                        <span>Tijolo maciço</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatNum(
-                            draftPreview.materials.tijolosMacicoUnid,
-                            0
-                          )}{' '}
-                          un
-                        </span>
-                      </div>
-                    )}
-                    {draftPreview.materials.argamassaSacos20kg > 0 && (
-                      <div className="flex justify-between">
-                        <span>Argamassa colante</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatNum(
-                            Math.ceil(
-                              draftPreview.materials.argamassaSacos20kg
-                            ),
-                            0
-                          )}{' '}
-                          sacos
-                        </span>
-                      </div>
-                    )}
-                    {draftPreview.materials.rejunteKg > 0 && (
-                      <div className="flex justify-between">
-                        <span>Rejunte</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatNum(
-                            Math.ceil(draftPreview.materials.rejunteKg),
-                            0
-                          )}{' '}
-                          kg
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleSaveDraft}
-                className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
-              >
-                {editingEntryId ? (
+        {/* Rodapé com a SOMA TOTAL dos Serviços Marcados */}
+        <div className="border-t border-slate-200 bg-slate-50 p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium text-slate-600">
+                Soma dos {selectionSummary.count}{' '}
+                {selectionSummary.count === 1
+                  ? 'serviço selecionado'
+                  : 'serviços selecionados'}
+                {selectionSummary.count > 0 && (
                   <>
-                    <Check className="h-4 w-4" />
-                    Salvar Alteração
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4" />
-                    Colocar no Orçamento
+                    {' '}
+                    · Prazo estimado:{' '}
+                    <span className="font-mono font-semibold tabular-nums text-slate-800">
+                      ~{formatNum(selectionSummary.daysFinal, 1)} dias
+                    </span>
                   </>
                 )}
+              </p>
+
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-5 gap-y-1">
+                <span className="font-mono text-2xl font-bold tabular-nums text-blue-700">
+                  {formatBRL(selectionSummary.totalFinal)}
+                </span>
+
+                {quoteMode === 'full' && selectionSummary.count > 0 && (
+                  <span className="text-xs text-slate-600">
+                    Mão de Obra{' '}
+                    <span className="font-mono font-semibold tabular-nums text-slate-900">
+                      {formatBRL(selectionSummary.laborFinal)}
+                    </span>{' '}
+                    + Materiais c/ {formatNum(summary.materialMarginPercent, 0)}
+                    % lucro{' '}
+                    <span className="font-mono font-semibold tabular-nums text-slate-900">
+                      {formatBRL(selectionSummary.materialClient)}
+                    </span>
+                  </span>
+                )}
+              </div>
+
+              {selectionSummary.minApplied && (
+                <p className="mt-2 text-xs text-amber-800">
+                  Aplicado mínimo de 1 diária da equipe (
+                  <span className="font-mono font-semibold tabular-nums">
+                    {formatBRL(minDailyLabor)}
+                  </span>
+                  ) porque a soma proporcional ({formatBRL(selectionSummary.laborRaw)}
+                  ) ficaria abaixo de 1 dia de trabalho.
+                </p>
+              )}
+
+              {quoteMode === 'full' && selectionSummary.count > 0 && (
+                <p className="mt-2 text-xs text-slate-600">
+                  Materiais estimados:{' '}
+                  {[
+                    selectionSummary.mats.cimentoSacos50kg > 0
+                      ? `${Math.ceil(selectionSummary.mats.cimentoSacos50kg)} sc cimento`
+                      : null,
+                    selectionSummary.mats.calSacos20kg > 0
+                      ? `${Math.ceil(selectionSummary.mats.calSacos20kg)} sc cal`
+                      : null,
+                    selectionSummary.mats.areiaM3 > 0
+                      ? `${formatNum(selectionSummary.mats.areiaM3, 2)} m³ areia`
+                      : null,
+                    selectionSummary.mats.britaM3 > 0
+                      ? `${formatNum(selectionSummary.mats.britaM3, 2)} m³ brita`
+                      : null,
+                    selectionSummary.mats.tijolosFuradoUnid > 0
+                      ? `${Math.ceil(selectionSummary.mats.tijolosFuradoUnid)} tijolos`
+                      : null,
+                    selectionSummary.mats.tijolosMacicoUnid > 0
+                      ? `${Math.ceil(selectionSummary.mats.tijolosMacicoUnid)} tijolos maciços`
+                      : null,
+                    selectionSummary.mats.argamassaSacos20kg > 0
+                      ? `${Math.ceil(selectionSummary.mats.argamassaSacos20kg)} sc argamassa`
+                      : null,
+                    selectionSummary.mats.rejunteKg > 0
+                      ? `${Math.ceil(selectionSummary.mats.rejunteKg)} kg rejunte`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || 'Nenhum'}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={selectionSummary.count === 0}
+                onClick={handleAddSelectedToBudget}
+                className="inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap shrink-0 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4" />
+                Somar {selectionSummary.count > 0 ? `${selectionSummary.count} ` : ''}
+                {selectionSummary.count === 1 ? 'Serviço' : 'Serviços'} no
+                Orçamento
               </button>
-              {editingEntryId && (
+
+              {project.entries.length > 0 && selectionSummary.count > 0 && (
                 <button
                   type="button"
-                  onClick={() => setEditingEntryId(null)}
-                  className="min-h-[46px] rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  onClick={handleReplaceWithSelected}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 whitespace-nowrap shrink-0 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100"
                 >
-                  Cancelar
+                  Usar Só Estes no Orçamento
                 </button>
               )}
             </div>
@@ -1063,7 +1238,7 @@ export const EasyQuoteView: React.FC<Props> = ({
         </div>
       </section>
 
-      {/* Passo 2: Lista Limpa de Serviços */}
+      {/* Passo 2: Lista de Serviços Somados no Orçamento */}
       <section className="rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5 sm:px-6">
           <h2 className="text-base font-semibold text-slate-900">
@@ -1115,8 +1290,8 @@ export const EasyQuoteView: React.FC<Props> = ({
               Nenhum serviço adicionado ainda.
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Escolha um serviço acima, digite o tamanho e clique em
-              &ldquo;Colocar no Orçamento&rdquo;.
+              Marque os serviços que deseja fazer acima e clique em &ldquo;Somar
+              Serviços no Orçamento&rdquo;.
             </p>
           </div>
         ) : (
@@ -1131,120 +1306,157 @@ export const EasyQuoteView: React.FC<Props> = ({
                 entry.calculatorType === 'vigas' ||
                 entry.calculatorType === 'baldrame_direto' ||
                 entry.calculatorType === 'baldrame_caixaria';
+              const isEditingThis = editingEntryId === entry.id;
 
               return (
                 <div
                   key={entry.id}
-                  className="flex flex-wrap items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-slate-50/70 sm:px-6"
+                  className={`px-5 py-3.5 transition-colors sm:px-6 ${
+                    isEditingThis ? 'bg-blue-50/40' : 'hover:bg-slate-50/70'
+                  }`}
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-900">
-                      {entry.descricao}
-                    </p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      <span className="font-mono tabular-nums">
-                        ~{Math.ceil(comp.masonDays)} dias
-                      </span>
-                      {quoteMode === 'full' && (
-                        <>
-                          {' '}
-                          · MO{' '}
-                          <span className="font-mono tabular-nums text-slate-700">
-                            {formatBRL(comp.laborCost)}
-                          </span>{' '}
-                          · Mat.{' '}
-                          <span className="font-mono tabular-nums text-slate-700">
-                            {formatBRL(comp.materialClientCost)}
-                          </span>
-                        </>
-                      )}
-                    </p>
-                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {entry.descricao}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        <span className="font-mono tabular-nums">
+                          ~{Math.ceil(comp.masonDays)} dias
+                        </span>
+                        {quoteMode === 'full' && (
+                          <>
+                            {' '}
+                            · MO{' '}
+                            <span className="font-mono tabular-nums text-slate-700">
+                              {formatBRL(comp.laborCost)}
+                            </span>{' '}
+                            · Mat.{' '}
+                            <span className="font-mono tabular-nums text-slate-700">
+                              {formatBRL(comp.materialClientCost)}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    </div>
 
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="0"
-                        value={
-                          isPillarRow
-                            ? entry.quantidadeUnid
-                            : isLinearRow
-                            ? entry.comprimentoM
-                            : entry.areaM2
-                        }
-                        onChange={(e) => {
-                          const val = Math.max(
-                            0,
-                            parseFloat(e.target.value) || 0
-                          );
-                          if (isPillarRow) {
-                            onUpdateEntry(entry.id, { quantidadeUnid: val });
-                          } else if (isLinearRow) {
-                            onUpdateEntry(entry.id, { comprimentoM: val });
-                          } else {
-                            onUpdateEntry(entry.id, { areaM2: val });
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          value={
+                            isPillarRow
+                              ? entry.quantidadeUnid
+                              : isLinearRow
+                              ? entry.comprimentoM
+                              : entry.areaM2
                           }
-                        }}
-                        className="min-h-[38px] w-20 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-right font-mono text-xs font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none"
-                      />
-                      <span className="text-xs text-slate-500">
-                        {isPillarRow ? 'un' : isLinearRow ? 'm' : 'm²'}
-                      </span>
-                    </div>
+                          onChange={(e) => {
+                            const val = Math.max(
+                              0,
+                              parseFloat(e.target.value) || 0
+                            );
+                            if (isPillarRow) {
+                              onUpdateEntry(entry.id, { quantidadeUnid: val });
+                            } else if (isLinearRow) {
+                              onUpdateEntry(entry.id, { comprimentoM: val });
+                            } else {
+                              onUpdateEntry(entry.id, { areaM2: val });
+                            }
+                          }}
+                          className="min-h-[38px] w-20 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-right font-mono text-xs font-semibold tabular-nums text-slate-900 focus:border-blue-700 focus:outline-none"
+                        />
+                        <span className="text-xs text-slate-500">
+                          {isPillarRow ? 'un' : isLinearRow ? 'm' : 'm²'}
+                        </span>
+                      </div>
 
-                    <div className="min-w-[100px] text-right font-mono text-sm font-bold tabular-nums text-blue-700">
-                      {formatBRL(
-                        quoteMode === 'labor_only'
-                          ? comp.laborCost
-                          : comp.totalClientCost
+                      <div className="min-w-[100px] text-right font-mono text-sm font-bold tabular-nums text-blue-700">
+                        {formatBRL(
+                          quoteMode === 'labor_only'
+                            ? comp.laborCost
+                            : comp.totalClientCost
+                        )}
+                      </div>
+
+                      {confirmDeleteId === entry.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (editingEntryId === entry.id) {
+                                setEditingEntryId(null);
+                              }
+                              onDeleteEntry(entry.id);
+                              setConfirmDeleteId(null);
+                            }}
+                            className="min-h-[36px] rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
+                          >
+                            Excluir
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="min-h-[36px] rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                          >
+                            Não
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirmDeleteId(null);
+                              setEditingEntryId(
+                                isEditingThis ? null : entry.id
+                              );
+                            }}
+                            className="inline-flex min-h-[36px] items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            {isEditingThis ? (
+                              <>
+                                <ChevronUp className="h-3.5 w-3.5" />
+                                Fechar
+                              </>
+                            ) : (
+                              <>
+                                <Pencil className="h-3.5 w-3.5" />
+                                Editar
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(entry.id)}
+                            className="inline-flex min-h-[36px] items-center rounded-md border border-slate-200 bg-white p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                            title="Excluir serviço"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       )}
                     </div>
-
-                    {confirmDeleteId === entry.id ? (
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (editingEntryId === entry.id) {
-                              setEditingEntryId(null);
-                            }
-                            onDeleteEntry(entry.id);
-                            setConfirmDeleteId(null);
-                          }}
-                          className="min-h-[36px] rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
-                        >
-                          Excluir
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(null)}
-                          className="min-h-[36px] rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                        >
-                          Não
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleStartEdit(entry)}
-                          className="inline-flex min-h-[36px] items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(entry.id)}
-                          className="inline-flex min-h-[36px] items-center rounded-md border border-slate-200 bg-white p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                          title="Excluir serviço"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
                   </div>
+
+                  {isEditingThis && (
+                    <div>
+                      {renderAdvancedFields(entry, (patch) =>
+                        onUpdateEntry(entry.id, patch)
+                      )}
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setEditingEntryId(null)}
+                          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-md bg-blue-700 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-800"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          Concluir Edição
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

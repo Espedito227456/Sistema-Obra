@@ -91,6 +91,10 @@ export const LaborMatrixView: React.FC<Props> = ({
       nome: serviceDraft.nome.trim() || 'Serviço de mão de obra',
       unidade: serviceDraft.unidade,
       produtividadeDia: Math.max(serviceDraft.produtividadeDia, 0.1),
+      precoFixoUnit:
+        serviceDraft.precoFixoUnit && serviceDraft.precoFixoUnit > 0
+          ? serviceDraft.precoFixoUnit
+          : undefined,
     });
     setEditingServiceId(null);
     setServiceDraft(null);
@@ -355,7 +359,7 @@ export const LaborMatrixView: React.FC<Props> = ({
               >
                 {isEditingRow ? (
                   <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-12">
-                    <div className="sm:col-span-6">
+                    <div className="sm:col-span-5">
                       <label className="mb-1 block text-xs font-medium text-slate-700">
                         Serviço
                       </label>
@@ -370,7 +374,7 @@ export const LaborMatrixView: React.FC<Props> = ({
                         className="min-h-[38px] w-full rounded border border-blue-700 bg-white px-2.5 py-1 text-xs font-medium text-slate-900"
                       />
                     </div>
-                    <div className="sm:col-span-3">
+                    <div className="sm:col-span-2">
                       <label className="mb-1 block text-xs font-medium text-slate-700">
                         Faz por dia ({serviceDraft.unidade})
                       </label>
@@ -395,7 +399,34 @@ export const LaborMatrixView: React.FC<Props> = ({
                         className="min-h-[38px] w-full rounded border border-slate-300 bg-white px-2.5 py-1 text-right font-mono text-xs tabular-nums"
                       />
                     </div>
-                    <div className="flex items-center justify-end gap-1.5 sm:col-span-3">
+                    <div className="sm:col-span-3">
+                      <label className="mb-1 block text-xs font-medium text-slate-700">
+                        Preço fixo/{serviceDraft.unidade} (opcional)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        placeholder="Pela diária"
+                        value={serviceDraft.precoFixoUnit || ''}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setServiceDraft((d) =>
+                            d
+                              ? {
+                                  ...d,
+                                  precoFixoUnit:
+                                    Number.isFinite(val) && val > 0
+                                      ? val
+                                      : undefined,
+                                }
+                              : d
+                          );
+                        }}
+                        className="min-h-[38px] w-full rounded border border-slate-300 bg-white px-2.5 py-1 text-right font-mono text-xs tabular-nums"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-1.5 sm:col-span-2">
                       <button
                         type="button"
                         onClick={saveEditService}
@@ -426,6 +457,14 @@ export const LaborMatrixView: React.FC<Props> = ({
                         <span className="font-mono tabular-nums">
                           {formatNum(srv.produtividadeDia, 1)} {srv.unidade}/dia
                         </span>
+                        {srv.precoFixoUnit && srv.precoFixoUnit > 0 && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-medium text-blue-700">
+                              Preço fixo por {srv.unidade}
+                            </span>
+                          </>
+                        )}
                         {isHigh && bench && (
                           <>
                             <span aria-hidden="true">·</span>

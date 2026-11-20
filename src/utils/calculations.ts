@@ -46,6 +46,13 @@ export function formatPct(val: number, decimals = 2): string {
   return `${formatNum(val, decimals)}%`;
 }
 
+export function getMinTeamDailyCost(config: LaborConfig): number {
+  const baseDay =
+    Math.max(config.diariaPedreiro, 0) +
+    (config.incluirServente ? Math.max(config.diariaServente, 0) : 0);
+  return baseDay * (1 + Math.max(config.encargosPercent, 0) / 100);
+}
+
 export function calcLaborUnitCost(
   service: LaborServiceRate,
   config: LaborConfig
@@ -55,6 +62,14 @@ export function calcLaborUnitCost(
   custoBaseUnit: number;
   custoComEncargosUnit: number;
 } {
+  if (service.precoFixoUnit && service.precoFixoUnit > 0) {
+    return {
+      custoPedreiroUnit: service.precoFixoUnit,
+      custoServenteUnit: 0,
+      custoBaseUnit: service.precoFixoUnit,
+      custoComEncargosUnit: service.precoFixoUnit,
+    };
+  }
   const prod = Math.max(service.produtividadeDia, 0.01);
   const custoPedreiroUnit = config.diariaPedreiro / prod;
   const custoServenteUnit = config.incluirServente
@@ -401,6 +416,9 @@ export interface ProjectSummary {
   totalMasonDays: number;
   totalHelperDays: number;
   totalAutoLabor: number;
+  totalAutoLaborRaw: number;
+  minDailyLabor: number;
+  minDailyApplied: boolean;
   totalAutoMaterial: number;
   materialMarginPercent: number;
   totalAutoMaterialMargin: number;
@@ -521,6 +539,31 @@ export function calcProjectSummary(project: ConstructionProject): ProjectSummary
   const custoTotalTerrenoEdificacao =
     custoTotalObra + Math.max(project.metadata.valorTerreno, 0);
 
+  const minDailyLabor = getMinTeamDailyCost(project.laborConfig);
+  const totalAutoLaborRaw = totalAutoLabor;
+  const minDailyApplied =
+    project.entries.length > 0 &&
+    totalAutoLaborRaw > 0 &&
+    totalAutoLaborRaw < minDailyLabor;
+
+  if (minDailyApplied) {
+    totalAutoLabor = minDailyLabor;
+    totalMasonDays = Math.max(totalMasonDays, 1);
+    if (project.entries.length === 1) {
+      const onlyId = project.entries[0].id;
+      const cur = entriesComputed[onlyId];
+      if (cur) {
+        entriesComputed[onlyId] = {
+          ...cur,
+          laborCost: minDailyLabor,
+          masonDays: Math.max(cur.masonDays, 1),
+          totalCost: minDailyLabor + cur.materialCost,
+          totalClientCost: minDailyLabor + cur.materialClientCost,
+        };
+      }
+    }
+  }
+
   const materialMarginPercent = Math.max(
     project.laborConfig.materialMarginPercent ?? 15,
     0
@@ -535,6 +578,9 @@ export function calcProjectSummary(project: ConstructionProject): ProjectSummary
     totalMasonDays,
     totalHelperDays,
     totalAutoLabor,
+    totalAutoLaborRaw,
+    minDailyLabor,
+    minDailyApplied,
     totalAutoMaterial,
     materialMarginPercent,
     totalAutoMaterialMargin,

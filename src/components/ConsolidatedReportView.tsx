@@ -123,6 +123,12 @@ export const ConsolidatedReportView: React.FC<Props> = ({
       );
     }
 
+    if (summary.minDailyApplied && project.entries.length > 1) {
+      lines.push(
+        `• Complemento diária mínima da equipe: *${formatBRL(summary.minDailyLabor - summary.totalAutoLaborRaw)}*`
+      );
+    }
+
     lines.push('');
     lines.push(
       `*TOTAL MÃO DE OBRA:* ${formatBRL(summary.totalAutoLabor)}`
@@ -462,6 +468,19 @@ export const ConsolidatedReportView: React.FC<Props> = ({
                     </tr>
                   );
                 })}
+                {summary.minDailyApplied && project.entries.length > 1 && (
+                  <tr className="bg-slate-50/70">
+                    <td
+                      colSpan={quoteMode === 'full' ? 4 : 2}
+                      className="px-3 py-2 text-xs text-slate-600"
+                    >
+                      Complemento para atingir 1 diária mínima da equipe
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono font-semibold tabular-nums text-slate-900">
+                      {formatBRL(summary.minDailyLabor - summary.totalAutoLaborRaw)}
+                    </td>
+                  </tr>
+                )}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
