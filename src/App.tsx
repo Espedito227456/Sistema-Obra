@@ -73,6 +73,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('labor');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [confirmDeleteSidebar, setConfirmDeleteSidebar] = useState(false);
 
   useEffect(() => {
     try {
@@ -106,55 +107,56 @@ export default function App() {
     }));
   };
 
+  const makeBlankProject = (indexLabel: number | string): ConstructionProject => ({
+    id: `obra-${Date.now()}`,
+    nomeObra: `Novo Orçamento (${indexLabel})`,
+    updatedAt: new Date().toISOString().slice(0, 10),
+    laborConfig: { ...DEFAULT_PROJECT.laborConfig },
+    laborServices: LABOR_SERVICES_DEFAULT.map((s) => ({ ...s })),
+    materialPrices: { ...MATERIAL_PRICES_DEFAULT },
+    entries: [],
+    pciItems: createInitialPciItems(false),
+    servicosAdicionais: [],
+    prazoMeses: 6,
+    schedule: [
+      { etapa: 'PréExc.', percentEtapa: 5 },
+      { etapa: '1', percentEtapa: 15 },
+      { etapa: '2', percentEtapa: 20 },
+      { etapa: '3', percentEtapa: 20 },
+      { etapa: '4', percentEtapa: 18 },
+      { etapa: '5', percentEtapa: 12 },
+      { etapa: '6', percentEtapa: 10 },
+    ],
+    metadata: {
+      ...DEFAULT_METADATA,
+      proponente: '',
+      cpfProp: '',
+      emailProp: '',
+      telefoneProp: '',
+      endereco: '',
+      areaConstruidaTotal: 85,
+      valorTerreno: 100000,
+      justificativasPci: '',
+      obrasExecutadas: '',
+    },
+  });
+
   const handleCreateBlankProject = () => {
-    const id = `obra-${Date.now()}`;
-    const blank: ConstructionProject = {
-      id,
-      nomeObra: `Nova Obra (${store.projects.length + 1})`,
-      updatedAt: new Date().toISOString().slice(0, 10),
-      laborConfig: { ...DEFAULT_PROJECT.laborConfig },
-      laborServices: LABOR_SERVICES_DEFAULT.map((s) => ({ ...s })),
-      materialPrices: { ...MATERIAL_PRICES_DEFAULT },
-      entries: [],
-      pciItems: createInitialPciItems(false),
-      servicosAdicionais: [],
-      prazoMeses: 6,
-      schedule: [
-        { etapa: 'PréExc.', percentEtapa: 5 },
-        { etapa: '1', percentEtapa: 15 },
-        { etapa: '2', percentEtapa: 20 },
-        { etapa: '3', percentEtapa: 20 },
-        { etapa: '4', percentEtapa: 18 },
-        { etapa: '5', percentEtapa: 12 },
-        { etapa: '6', percentEtapa: 10 },
-      ],
-      metadata: {
-        ...DEFAULT_METADATA,
-        proponente: '',
-        cpfProp: '',
-        emailProp: '',
-        telefoneProp: '',
-        endereco: '',
-        areaConstruidaTotal: 85,
-        valorTerreno: 100000,
-        justificativasPci: '',
-        obrasExecutadas: '',
-      },
-    };
+    const blank = makeBlankProject(store.projects.length + 1);
     setStore((prev) => ({
       projects: [...prev.projects, blank],
-      activeId: id,
+      activeId: blank.id,
     }));
-    setActiveTab('materials');
     setMobileMenuOpen(false);
   };
 
-  const handleDuplicateProject = () => {
+  const handleDuplicateProject = (targetId = activeProject.id) => {
+    const source = store.projects.find((p) => p.id === targetId) ?? activeProject;
     const id = `obra-${Date.now()}`;
     const copy: ConstructionProject = {
-      ...JSON.parse(JSON.stringify(activeProject)),
+      ...JSON.parse(JSON.stringify(source)),
       id,
-      nomeObra: `${activeProject.nomeObra} (Cópia)`,
+      nomeObra: `${source.nomeObra} (Cópia)`,
     };
     setStore((prev) => ({
       projects: [...prev.projects, copy],
@@ -162,14 +164,49 @@ export default function App() {
     }));
   };
 
+  const handleUpdateProjectInfo = (
+    id: string,
+    patch: { nomeObra?: string; proponente?: string; areaConstruidaTotal?: number }
+  ) => {
+    setStore((prev) => ({
+      ...prev,
+      projects: prev.projects.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              nomeObra: patch.nomeObra !== undefined ? patch.nomeObra : p.nomeObra,
+              updatedAt: new Date().toISOString().slice(0, 10),
+              metadata: {
+                ...p.metadata,
+                proponente:
+                  patch.proponente !== undefined
+                    ? patch.proponente
+                    : p.metadata.proponente,
+                areaConstruidaTotal:
+                  patch.areaConstruidaTotal !== undefined
+                    ? patch.areaConstruidaTotal
+                    : p.metadata.areaConstruidaTotal,
+              },
+            }
+          : p
+      ),
+    }));
+  };
+
   const handleDeleteProject = (id: string) => {
-    if (store.projects.length <= 1) return;
+    setConfirmDeleteSidebar(false);
     setStore((prev) => {
       const remaining = prev.projects.filter((p) => p.id !== id);
+      if (remaining.length === 0) {
+        const blank = makeBlankProject(1);
+        return {
+          projects: [blank],
+          activeId: blank.id,
+        };
+      }
       return {
         projects: remaining,
-        activeId:
-          prev.activeId === id ? remaining[0].id : prev.activeId,
+        activeId: prev.activeId === id ? remaining[0].id : prev.activeId,
       };
     });
   };
@@ -260,23 +297,42 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={handleDuplicateProject}
+              onClick={() => handleDuplicateProject(activeProject.id)}
               className="inline-flex items-center justify-center rounded border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50"
-              title="Duplicar obra atual"
+              title="Duplicar orçamento atual"
             >
               <Copy className="h-3.5 w-3.5" />
             </button>
-            {store.projects.length > 1 && (
-              <button
-                type="button"
-                onClick={() => handleDeleteProject(activeProject.id)}
-                className="inline-flex items-center justify-center rounded border border-slate-300 bg-white p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                title="Excluir obra atual"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteSidebar((v) => !v)}
+              className="inline-flex items-center justify-center rounded border border-slate-300 bg-white p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"
+              title="Excluir orçamento atual"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
           </div>
+          {confirmDeleteSidebar && (
+            <div className="mt-2 flex items-center justify-between gap-2 rounded border border-red-200 bg-red-50 px-2.5 py-2 text-xs">
+              <span className="font-medium text-red-800">Excluir este orçamento?</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteProject(activeProject.id)}
+                  className="rounded bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-700"
+                >
+                  Sim
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteSidebar(false)}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50"
+                >
+                  Não
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Navegação */}
@@ -426,11 +482,25 @@ export default function App() {
           {activeTab === 'labor' && (
             <LaborMatrixView
               project={activeProject}
+              allProjects={store.projects}
               summary={summary}
+              onSelectProject={(id: string) =>
+                setStore((prev) => ({ ...prev, activeId: id }))
+              }
+              onCreateProject={handleCreateBlankProject}
+              onDuplicateProject={handleDuplicateProject}
+              onUpdateProjectInfo={handleUpdateProjectInfo}
+              onDeleteProject={handleDeleteProject}
               onUpdateLaborConfig={(patch) =>
                 updateActiveProject((p) => ({
                   ...p,
                   laborConfig: { ...p.laborConfig, ...patch },
+                }))
+              }
+              onAddLaborService={(service: LaborServiceRate) =>
+                updateActiveProject((p) => ({
+                  ...p,
+                  laborServices: [service, ...p.laborServices],
                 }))
               }
               onUpdateLaborService={(id, patch: Partial<LaborServiceRate>) =>
@@ -440,6 +510,22 @@ export default function App() {
                     s.id === id ? { ...s, ...patch } : s
                   ),
                 }))
+              }
+              onDeleteLaborService={(id: string) =>
+                updateActiveProject((p) => {
+                  const nextServices = p.laborServices.filter((s) => s.id !== id);
+                  if (nextServices.length === 0) return p;
+                  const fallbackId = nextServices[0].id;
+                  return {
+                    ...p,
+                    laborServices: nextServices,
+                    entries: p.entries.map((e) =>
+                      e.laborServiceId === id
+                        ? { ...e, laborServiceId: fallbackId }
+                        : e
+                    ),
+                  };
+                })
               }
               onResetLaborDefaults={() =>
                 updateActiveProject((p) => ({

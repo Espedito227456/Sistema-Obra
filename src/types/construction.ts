@@ -16,7 +16,7 @@ export interface LaborConfig {
 export interface LaborServiceRate {
   id: string;
   nome: string;
-  unidade: 'm²' | 'm³' | 'm';
+  unidade: 'm²' | 'm³' | 'm' | 'un' | 'vb';
   produtividadeDia: number; // quantidade executada por dia por equipe base
   coefServente: number; // fração de diária de servente por diária de pedreiro (ex: 1.0 = 1 servente por pedreiro)
   pciItemId: number;

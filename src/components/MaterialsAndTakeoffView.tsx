@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { BookOpen, Calculator, Plus, Search, Trash2, X } from 'lucide-react';
+import { BookOpen, Calculator, Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import {
   CalculatorType,
   ConstructionProject,
@@ -372,14 +372,34 @@ export const MaterialsAndTakeoffView: React.FC<Props> = ({
   const [showTracos, setShowTracos] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [pciFilter, setPciFilter] = useState<number | 'all'>('all');
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [confirmDeleteEntryId, setConfirmDeleteEntryId] = useState<string | null>(null);
 
   const activeMeta =
     CALCULATOR_PRESETS.find((p) => p.type === selectedType) ??
     CALCULATOR_PRESETS[0];
 
   const handleSelectCalc = (type: CalculatorType) => {
+    setEditingEntryId(null);
     setSelectedType(type);
     const meta = CALCULATOR_PRESETS.find((p) => p.type === type);
+    if (meta) {
+      setDraft({ ...meta.template });
+    }
+  };
+
+  const handleStartEditEntry = (entry: ServiceEntry) => {
+    const { id, ...rest } = entry;
+    setEditingEntryId(id);
+    setConfirmDeleteEntryId(null);
+    setSelectedType(entry.calculatorType);
+    setDraft({ ...rest });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEditEntry = () => {
+    setEditingEntryId(null);
+    const meta = CALCULATOR_PRESETS.find((p) => p.type === selectedType);
     if (meta) {
       setDraft({ ...meta.template });
     }
@@ -401,6 +421,11 @@ export const MaterialsAndTakeoffView: React.FC<Props> = ({
   ]);
 
   const handleAddDraftToProject = () => {
+    if (editingEntryId) {
+      onUpdateEntry(editingEntryId, { ...draft });
+      setEditingEntryId(null);
+      return;
+    }
     const newEntry: ServiceEntry = {
       ...draft,
       id: `srv-${Date.now()}`,
@@ -1024,14 +1049,34 @@ export const MaterialsAndTakeoffView: React.FC<Props> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleAddDraftToProject}
-              className="mt-5 inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-md bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
-            >
-              <Plus className="h-4 w-4" />
-              Adicionar Serviço à Obra & PCI
-            </button>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleAddDraftToProject}
+                className="inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+              >
+                {editingEntryId ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    Salvar Alterações no Serviço
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Adicionar Serviço à Obra & PCI
+                  </>
+                )}
+              </button>
+              {editingEntryId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEditEntry}
+                  className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </section>
@@ -1213,14 +1258,49 @@ export const MaterialsAndTakeoffView: React.FC<Props> = ({
                         {formatBRL(comp.totalCost)}
                       </td>
                       <td className="px-3 py-2.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => onDeleteEntry(entry.id)}
-                          className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                          title="Remover serviço"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {confirmDeleteEntryId === entry.id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (editingEntryId === entry.id) {
+                                  setEditingEntryId(null);
+                                }
+                                onDeleteEntry(entry.id);
+                                setConfirmDeleteEntryId(null);
+                              }}
+                              className="whitespace-nowrap rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700"
+                            >
+                              Excluir
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteEntryId(null)}
+                              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                            >
+                              Não
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditEntry(entry)}
+                              className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-700"
+                              title="Editar serviço completo"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteEntryId(entry.id)}
+                              className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                              title="Excluir serviço"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
